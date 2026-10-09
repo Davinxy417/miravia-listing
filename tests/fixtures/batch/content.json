@@ -1,0 +1,39 @@
+{
+  "T01": {
+    "title": "Manta suave para sofá y cama con colores azul o gris para hogar",
+    "description": "<p>Esta ficha es un ejemplo de prueba. Comprueba el color seleccionado y las medidas indicadas antes de elegir el producto. Esta ficha es un ejemplo de prueba. Comprueba el color seleccionado y las medidas indicadas antes de elegir el producto. Esta ficha es un ejemplo de prueba. Comprueba el color seleccionado y las medidas indicadas antes de elegir el producto. Esta ficha es un ejemplo de prueba. Comprueba el color seleccionado y las medidas indicadas antes de elegir el producto. Esta ficha es un ejemplo de prueba. Comprueba el color seleccionado y las medidas indicadas antes de elegir el producto. </p>",
+    "attributes": "Material: Tejido de prueba; Medidas: 10x20 cm",
+    "warning": "No",
+    "warning_text": "",
+    "category": "Ropa de cama y baño,Ropa de cama,Mantas y colchas",
+    "gpsr_name": "Manta de prueba",
+    "gpsr_safety": [
+      "Seguir la etiqueta para el lavado y secado.",
+      "Mantener lejos de llamas y fuentes de calor directo.",
+      "Guardar completamente seca."
+    ],
+    "sku_include_ean": true
+  },
+  "T01B": {
+    "title": "Pack de 2 mantas suaves para sofá y cama en colores azul o gris",
+    "description": "<p>Esta ficha es un ejemplo de prueba. Comprueba el color seleccionado y las medidas indicadas antes de elegir el producto. Esta ficha es un ejemplo de prueba. Comprueba el color seleccionado y las medidas indicadas antes de elegir el producto. Esta ficha es un ejemplo de prueba. Comprueba el color seleccionado y las medidas indicadas antes de elegir el producto. Esta ficha es un ejemplo de prueba. Comprueba el color seleccionado y las medidas indicadas antes de elegir el producto. Esta ficha es un ejemplo de prueba. Comprueba el color seleccionado y las medidas indicadas antes de elegir el producto. </p>",
+    "attributes": "Material: Tejido de prueba; Medidas: 10x20 cm",
+    "warning": "No",
+    "warning_text": ""
+  },
+  "T02": {
+    "title": "Manta suave para sofá y cama con colores azul o gris para hogar",
+    "description": "<p>Esta ficha es un ejemplo de prueba. Comprueba el color seleccionado y las medidas indicadas antes de elegir el producto. Esta ficha es un ejemplo de prueba. Comprueba el color seleccionado y las medidas indicadas antes de elegir el producto. Esta ficha es un ejemplo de prueba. Comprueba el color seleccionado y las medidas indicadas antes de elegir el producto. Esta ficha es un ejemplo de prueba. Comprueba el color seleccionado y las medidas indicadas antes de elegir el producto. Esta ficha es un ejemplo de prueba. Comprueba el color seleccionado y las medidas indicadas antes de elegir el producto. </p>",
+    "attributes": "Material: Tejido de prueba; Medidas: 10x20 cm",
+    "warning": "No",
+    "warning_text": "",
+    "category": "Ropa de cama y baño,Ropa de cama,Mantas y colchas",
+    "gpsr_name": "Manta de prueba",
+    "gpsr_safety": [
+      "Seguir la etiqueta para el lavado y secado.",
+      "Mantener lejos de llamas y fuentes de calor directo.",
+      "Guardar completamente seca."
+    ],
+    "sku_include_ean": true
+  }
+}

@@ -1,0 +1,3 @@
+openpyxl
+Pillow
+playwright>=1.63,<2
