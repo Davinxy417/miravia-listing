@@ -49,7 +49,7 @@ def content_errors(group, item):
     def bad(message): errors.append(f'content.json 的 {group}：{message}；请修改该组文案。')
     for key in ('title', 'description', 'attributes', 'warning', 'warning_text', 'category'):
         if not isinstance(item.get(key), str): bad(f'缺少字符串字段 {key}')
-    for key, low, high in (('title', 55, 150), ('description', 400, 2200), ('attributes', 0, 200), ('warning_text', 0, 2000)):
+    for key, low, high in (('title', 55, 128), ('description', 400, 2200), ('attributes', 0, 200), ('warning_text', 0, 2000)):
         if isinstance(item.get(key), str) and not low <= len(item[key]) <= high:
             bad(f'{key} 长度应为 {low}～{high} 字符，当前 {len(item[key])}')
     if item.get('warning') not in ('Sí', 'No'): bad('warning 只能为 Sí 或 No')
