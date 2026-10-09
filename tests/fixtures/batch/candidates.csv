@@ -1,0 +1,6 @@
+﻿group,shop,art_id,ean,unit_ean,src_name,var1_name,var1_value,var2_name,var2_value,pack_qty,unit_cost_ex_iva,img_hash,weight_kg,len_cm,wid_cm,hei_cm,market_low,market_high,notes
+T01,3321,1001,2000000000015,2000000000015,MANTA TEST 10X20CM,Color,Azul,,,1,2.50,fixture-azul,0.5,10,20,5,10,50,虚拟测试商品
+T01,3321,1001,2000000000022,2000000000022,MANTA TEST 10X20CM,Color,Gris,,,1,2.50,fixture-gris,0.5,10,20,5,10,50,虚拟测试商品
+T01B,3321,1001,2000000000039,2000000000015,MANTA TEST 10X20CM,Color,Azul,,,2,2.50,fixture-azul,1.0,10,20,10,10,50,虚拟测试商品
+T01B,3321,1001,2000000000046,2000000000022,MANTA TEST 10X20CM,Color,Gris,,,2,2.50,fixture-gris,1.0,10,20,10,10,50,虚拟测试商品
+T02,3321,1002,2000000000053,2000000000022,MANTA TEST 10X20CM,Color,Unico,,,1,2.50,fixture-unico,0.5,10,20,5,10,50,虚拟测试商品

@@ -1,0 +1,84 @@
+{
+  "pricing": {
+    "cost_factor": 1.262,
+    "packaging": 0.5,
+    "fees": {
+      "commission": 0.123,
+      "points": 0.05,
+      "promo": 0.0143
+    },
+    "coupon_rate": 0.1,
+    "min_profit": 3.0,
+    "profit_rate": 0.3,
+    "spread_warn": 2.0,
+    "ship_tiers": [
+      [
+        0.5,
+        2.98
+      ],
+      [
+        1,
+        3.6
+      ],
+      [
+        2,
+        4.5
+      ],
+      [
+        3,
+        5.5
+      ],
+      [
+        5,
+        7.0
+      ],
+      [
+        10,
+        9.5
+      ],
+      [
+        999,
+        14.0
+      ]
+    ],
+    "original_markup": 1.0,
+    "volumetric_divisor": 5000
+  },
+  "stock_default": 10,
+  "brand": "Sin marca",
+  "template": "Categorías_mixtas_PublicarEb2149eb6af094142a44f04bc1aaf2b8ed.xlsm",
+  "sku": {
+    "prefix": "YG"
+  },
+  "suppliers": {
+    "7868": {
+      "company": "HAOONLINE S.L",
+      "address": "Calle Maestrat, 18, 46940 Manises, Valencia, España",
+      "email": "haoonline@gmail.com",
+      "fabricante": "HAOONLINE S.L, 2680340, 2026-10-07",
+      "responsable": "HAOONLINE S.L, 514, 2026-10-07"
+    },
+    "3321": {
+      "company": "H&J TEXHOGAR S.L.U",
+      "address": "Avinguda de la Cova, 166, 46940 Manises, Valencia, España",
+      "email": "hjtexhogar@gmail.com",
+      "fabricante": "H&J TEXHOGAR S.L.U, 2682335, 2026-10-07",
+      "responsable": "H&J TEXHOGAR S.L.U, 516, 2026-10-07"
+    },
+    "027": {
+      "company": "ZHENGDA COMERCIO",
+      "address": "Calle Alcalatén, 1, Pol. Ind. La Cova, 46940 Manises, Valencia, España",
+      "email": "zhengdacomercio@gmail.com",
+      "fabricante": "ZHENGDA COMERCIO, 2734065, 2026-10-07",
+      "responsable": "ZHENGDA COMERCIO, 518, 2026-10-07"
+    },
+    "6850": {
+      "company": "ZHENGDA COMERCIO",
+      "address": "Calle Alcalatén, 1, Pol. Ind. La Cova, 46940 Manises, Valencia, España",
+      "email": "zhengdacomercio@gmail.com",
+      "fabricante": "ZHENGDA COMERCIO, 2734065, 2026-10-07",
+      "responsable": "ZHENGDA COMERCIO, 518, 2026-10-07"
+    }
+  },
+  "image_host": null
+}

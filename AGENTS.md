@@ -7,8 +7,11 @@
 - 入口:`python scripts/mlist.py <步骤> ...`(所有步骤都走它;以后的本地网页也调它)
 - 工作区(每人一份,不在本仓库):店铺配置 `shop.json`、官方模板、批次数据、图片、输出。
 - 冒烟测试:`python tests/smoke_test.py`(必须打印 `SMOKE OK`)
+- 旧基准对拍:`python tests/regress_legacy.py`(只读旧项目,全部一致时打印 `REGRESS OK`;旧项目不存在时 SKIP)
+- 辅助模块测试:`python tests/auxiliary_test.py`(GPSR、叠字、图片收集/网址与工作区选择)
+- 配置和批次格式:`references/店铺配置.md`、`references/数据格式.md`;核心模块在 `scripts/listing_core/`。
 - Python 3.12;依赖只用 openpyxl、Pillow,要加别的先问。
-- 米拉维亚官方 .xlsm 模板必须原样保留宏和数据校验:只改 `Pantilla` 表的 sheetData,其他 ZIP 成员逐字节复制。
+- 米拉维亚官方 .xlsm 模板必须原样保留宏和数据校验:只改 `Pantilla` 表的 sheetData/dimension,其他 ZIP 成员逐字节复制。
 - 电商经验(写标题/文案、改定价、选品):`references/电商经验.md`,是参考不是死规定。
 
 规矩:
