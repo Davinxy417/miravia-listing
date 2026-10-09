@@ -8,7 +8,7 @@
 1. 需要:Git、Python 3.12、GitHub CLI(`gh`,推图床用)、Edge(系统自带)。缺的用 `winget install` 装。
 2. 下载(放哪都行,下面以用户目录为例):
    ```
-   git clone -b feat/core https://github.com/Davinxy417/miravia-listing.git "%USERPROFILE%\miravia-listing"
+   git clone https://github.com/Davinxy417/miravia-listing.git "%USERPROFILE%\miravia-listing"
    ```
 3. 装依赖:`python -m pip install -r "%USERPROFILE%\miravia-listing\requirements.txt"`(友购用系统 Edge,不用 `playwright install`)。
 4. 链接到 skill 目录(用了哪个 AI 就链哪个,目录不存在先建):
