@@ -40,18 +40,19 @@ def parser():
         'overlay': '用 Pillow 在现有底图上叠字，不联网、不生成 AI 图片',
         'images-collect': '收集主推款展示图和每个变体的图片到 image_files.csv',
         'images-urls': '根据图床前缀生成 images.csv；只生成网址，不上传图片',
-        'yollgo-login': '打开系统 Edge，请在窗口里自行登录友购；不经手密码',
+        'yollgo-login': '打开系统 Edge，先尝试已保存密码的自动填充；失败请手动登录',
         'fetch': '读取 barcodes.txt，搜友购报价、选批发商、保存原图和总览',
         'yollgo-search': '在一家友购批发商中搜索关键词或条码，寻找同系列商品',
         'build': '校验 groups.json，生成候选 SKU、颜色/组合装条码和变体目录',
         'images-plan': '按批次、现有图片和审阅结果生成出图清单',
         'images-finish': '整理原始图、脚本画尺寸、派生变体图并备份旧图',
-        'seedream': '按清单调用 BytePlus Seedream；先估算，加 --yes 才付费',
+        'seedream': '按清单调用 Seedream；--yes 确认付费，--auto 按店铺预算放行',
         'images-sheet': '按组生成带 id 和状态的审阅拼图',
         'images-review': '记录图片通过或重做及原因',
         'image-host-setup': '建立或使用公开 GitHub 图床；先预览，加 --yes 才操作',
         'publish-images': '发布本批次审过的成品；先预览，加 --yes 才推送',
         'finalize': '收集图片、使用已发布网址、填表检查；可分批并更新上架台账',
+        'report': '写早上看这里.md：能否上传、表路径、售价利润、出图费用和待办',
     }
     commands = {}
     for name, description in descriptions.items():
@@ -66,6 +67,8 @@ def parser():
     commands['yollgo-search'].add_argument('--shop', required=True, metavar='商家id', help='友购批发商 id，保留前导零，例如 027')
     commands['yollgo-search'].add_argument('keyword', metavar='关键词或条码', help='含空格时用引号括起来，如 "MANTA BORREGO"')
     commands['build'].add_argument('--force', action='store_true', help='明确覆盖已有候选商品和变体映射，随后必须重新 price')
+    for name in ('fetch', 'yollgo-search', 'yollgo-login'):
+        commands[name].add_argument('--auto', action='store_true', help='无人值守：自动登录失败后最多等 10 分钟，再提示手动登录重跑')
     selection = commands['overlay'].add_mutually_exclusive_group(required=True)
     selection.add_argument('--all', action='store_true', help='处理全部商品组')
     selection.add_argument('--group', action='append', metavar='组名', help='指定组，可重复传入')
@@ -79,7 +82,9 @@ def parser():
     chosen = commands['seedream'].add_mutually_exclusive_group(required=True)
     chosen.add_argument('--only', nargs='+', help='选择完整 id')
     chosen.add_argument('--all-missing', action='store_true', help='只生成缺图，不包含重做；派生/共用图不扣费')
-    commands['seedream'].add_argument('--yes', action='store_true', help='确认预计张数及单位，允许调用付费接口')
+    approval = commands['seedream'].add_mutually_exclusive_group()
+    approval.add_argument('--yes', action='store_true', help='确认预计张数及单位，允许调用付费接口')
+    approval.add_argument('--auto', action='store_true', help='按 shop.json 的组/批次预算自动放行；超预算跳过，失败即停')
     commands['images-review'].add_argument('--ok', nargs='+', help='通过的完整 id，可多张')
     commands['images-review'].add_argument('--redo', nargs='+', help='需重做的完整 id')
     commands['images-review'].add_argument('--note', default='', help='重做原因，标记重做时必填')
@@ -111,11 +116,11 @@ def dispatch(args):
     if cmd == 'yollgo-login':
         from listing_core.yollgo_browser import login
         # main captures stdout; send interactive instructions before its redirect.
-        return login(ws, notify=_tell)
+        return login(ws, notify=_tell, unattended=args.auto)
     if cmd == 'yollgo-search':
         from listing_core.yollgo_browser import session
         from listing_core.yollgo import search
-        with session(ws, notify=_tell) as client:
+        with session(ws, notify=_tell, unattended=args.auto) as client:
             return search(client, args.shop, args.keyword)
     if cmd == 'categories':
         import openpyxl
@@ -125,6 +130,9 @@ def dispatch(args):
         finally: wb.close()
         return dict(categories=values, count=len(values))
     batch = batch_path(ws, getattr(args, 'batch', None))
+    if cmd == 'report':
+        from listing_core.report import run
+        return run(ws, batch, shop, template_path(ws, shop, False))
     if cmd == 'publish-images':
         from listing_core.image_host import publish
         return publish(ws, batch, shop, args.yes, args.include_unreviewed)
@@ -134,7 +142,7 @@ def dispatch(args):
     if cmd == 'fetch':
         from listing_core.yollgo_browser import session
         from listing_core.yollgo import fetch
-        with session(ws, notify=_tell) as client:
+        with session(ws, notify=_tell, unattended=args.auto) as client:
             return fetch(ws, batch, shop, client)
     if cmd == 'build':
         from listing_core.yollgo_build import build
@@ -147,7 +155,7 @@ def dispatch(args):
         return iw.review(batch, args.ok, args.redo, args.note)
     if cmd == 'seedream':
         from listing_core.seedream import run
-        return run(batch, args.only, args.all_missing, args.yes)
+        return run(batch, args.only, args.all_missing, args.yes, auto=args.auto, shop=shop)
     # No batch file may write through a pre-existing link outside its workspace.
     if cmd not in ('check', 'status'):
         for name in ('priced.csv', 'image_files.csv', 'images.csv', 'output'):
@@ -221,7 +229,7 @@ def main(argv=None):
         errors = [f'这一步未完成（{type(exc).__name__}）：{exc}；请核对对应批次文件和配置后重试。']
     exit_code = output.pop('exit_code', 1 if errors else 0)
     result = dict(ok=not errors, warnings=warnings, errors=errors, **output)
-    if args is not None and args.command == 'finalize':
+    if args is not None and args.command in ('finalize', 'report'):
         result.setdefault('upload_ready', False)
     if json_mode:
         print(json.dumps(result, ensure_ascii=False, allow_nan=False))

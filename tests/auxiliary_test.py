@@ -82,6 +82,8 @@ def main():
     except Problem:
         # 本机"文档"文件夹登记的位置不存在时(用户搬过文件夹)查询会失败;这是环境问题,用户配置文件能兜底。
         print('工作区：优先级通过；提醒：本机系统"文档"文件夹位置无效,默认工作区需靠 ~/.miravia-listing.json')
+    from test_auto import main as test_auto
+    test_auto()
     print('AUXILIARY OK')
 
 

@@ -32,7 +32,61 @@ def captured(ws, *args):
     return code, json.loads(out.getvalue())
 
 
+def test_auto_budget():
+    ws = workspace('auto-budget-')
+    cli(ws, 'init'); cli(ws, 'new-batch', 'sample')
+    batch = ws / 'batches/sample'
+    (batch / 'ref.jpg').write_bytes(fake_image())
+    def job(jid, refs=1):
+        return dict(id=jid, group=jid.split('/')[0], variant='crema', slot=jid.split('/')[-1],
+                    method='model', status='missing', raw=None, refs=['ref.jpg'] * refs,
+                    raw_dir='images/' + jid.rsplit('/', 1)[0] + '/internal/raw', output='unused.jpg',
+                    prompt='离线图', blockers=[])
+    jobs = [job('G01/crema/01', 3), job('G01/crema/02'), job('G01B/crema/01'), job('G03/crema/01')]
+    json_write(batch / 'image_plan.json', dict(jobs=jobs))
+    json_write(batch / 'seedream_log.json', {'G01/old/01': [dict(state='failed')],
+                                           'G00/old/01': [dict(state='started', units=0.5)]})
+    shop = dict(auto=dict(enabled=True, budget_units_per_group=2.8, budget_units_per_batch=4.58))
+    config = read_json(ws / 'shop.json')
+    config['auto'] = dict(shop['auto'], max_groups_per_file=10)
+    json_write(ws / 'shop.json', config)
+    with patch.object(seedream, 'make_plan', return_value=dict(jobs=jobs)):
+        result = seedream.run(batch, all_missing=True, auto=True, shop=shop, client=lambda *a: fake_image(), key_reader=lambda: 'fake')
+        assert result['produced'] == ['G01/crema/02', 'G01B/crema/01'], result
+        assert result['over_budget'] == ['G01/crema/01', 'G03/crema/01'] and result['spent_units'] == 4.58
+        log = read_json(batch / 'seedream_log.json')
+        assert log['G01/crema/02'][0]['units'] == 1.36
+        assert seedream.spending(log)[1]['G01'] == seedream.Decimal('2.72')
+        result = seedream.run(batch, all_missing=True, auto=True, shop=shop,
+                              key_reader=lambda: (_ for _ in ()).throw(AssertionError('超预算不读 Key')))
+        assert len(result['over_budget']) == 4 and not result['errors'] and result['spent_units'] == 4.58
+        with patch.object(seedream, 'api_key', side_effect=AssertionError('不能读密钥')):
+            code, result = captured(ws, 'seedream', '--only', jobs[0]['id'], '--auto')
+        assert code == 0 and result['over_budget'] == [jobs[0]['id']]
+    code, result = captured(ws, 'seedream', '--only', jobs[0]['id'], '--auto', '--yes')
+    assert code == 1 and '--auto' in str(result) and '--yes' in str(result)
+    config = read_json(ws / 'shop.json'); config['auto']['enabled'] = False
+    json_write(ws / 'shop.json', config)
+    code, result = captured(ws, 'seedream', '--only', jobs[0]['id'], '--auto')
+    assert code == 1 and '店铺未开启全自动' in str(result)
+    # An uncertain API failure is charged once and stops all later calls.
+    (batch / 'seedream_log.json').unlink()
+    jobs = [job('G01/crema/01', 2), job('G02/crema/01')]
+    json_write(batch / 'image_plan.json', dict(jobs=jobs))
+    with patch.object(seedream, 'make_plan', return_value=dict(jobs=jobs)):
+        calls = []
+        def failure(*args):
+            calls.append(1); raise TimeoutError('offline')
+        tight = dict(auto=dict(enabled=True, budget_units_per_group=10, budget_units_per_batch=1.5))
+        result = seedream.run(batch, all_missing=True, auto=True, shop=tight, client=failure, key_reader=lambda: 'fake')
+        assert len(calls) == 1 and result['errors'] and result['spent_units'] == 1.45
+        assert result['over_budget'] == [], '失败立即停，不处理或记录后面的预算跳过'
+        assert read_json(batch / 'seedream_log.json')['G01/crema/01'][0]['state'] == 'failed'
+    print('全自动预算：旧日志/失败/started 累计、边界放行、超预算继续、B 组独立、重跑累计、互斥和关闭开关通过')
+
+
 def main():
+    test_auto_budget()
     ws = workspace('images-')
     cli(ws, 'init'); cli(ws, 'new-batch', 'sample')
     batch = ws / 'batches/sample'

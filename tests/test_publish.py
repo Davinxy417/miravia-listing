@@ -255,8 +255,18 @@ def main():
         assert code == 1 and any('fabricante' in e for e in result['errors'])
         assert (batch / 'output/miravia_upload.xlsm').read_bytes() == old_output and not (ws / '台账.csv').exists()
         json_write(ws / 'shop.json', good_shop)
+        cli(ws, 'price', '--batch', batch.name)
         code, result = captured(ws, 'finalize', '--batch', batch.name, '--max-groups', '2')
         assert code == 0 and result['upload_ready'] and len(result['outputs']) == 2, result
+        upload_outputs = result['outputs']
+        notes = '自动决定：保留已审过的图。\n\n待办原文 | 不改格式。\n'
+        (batch / 'notes.md').write_text(notes, 'utf-8')
+        ledger_before = (ws / '台账.csv').read_bytes()
+        code, report = captured(ws, 'report', '--batch', batch.name)
+        assert code == 0 and report['upload_ready'] and report['outputs'] == upload_outputs, report
+        assert report['count'] == 5 and report['groups'] == 3 and len(report['prices']) == 5
+        assert (batch / '早上看这里.md').read_text('utf-8').endswith(notes)
+        assert (ws / '台账.csv').read_bytes() == ledger_before
         template = ws / 'template' / good_shop['template']
         family_groups = []
         for output in result['outputs']:
@@ -293,6 +303,8 @@ def main():
         source.write_bytes(jpeg('black'))
         code, result = captured(ws, 'finalize', '--batch', batch.name)
         assert code == 0 and not result['upload_ready'] and any('成品已变化' in w for w in result['warnings'])
+        code, report = captured(ws, 'report', '--batch', batch.name)
+        assert code == 0 and not report['upload_ready'] and any('成品已变化' in t for t in report['todos']), report
         assert csv_rows(ws / '台账.csv') == updated
         # Rejected unrelated outgoing commits never reach the fake remote.
         remote_head = local_git(ws, '--git-dir', str(bare), 'rev-parse', 'main')
