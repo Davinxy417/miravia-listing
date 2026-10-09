@@ -63,8 +63,7 @@ def data_uri(path):
 
 def generate(prompt, images, key):
     body = dict(model=MODEL, prompt=prompt, size=GEN_SIZE, response_format='b64_json',
-                output_format='jpeg', watermark=False, stream=False,
-                sequential_image_generation='disabled')
+                output_format='jpeg', watermark=False)  # 5.0 Pro 不接受 stream/sequential_image_generation,带了回 400
     uris = [data_uri(p) for p in images]
     if uris: body['image'] = uris[0] if len(uris) == 1 else uris
     request = urllib.request.Request(ENDPOINT, data=json.dumps(body).encode(),
