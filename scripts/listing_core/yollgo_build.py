@@ -169,8 +169,11 @@ def build(ws, batch, shop, force=False):
     # Reserve ALL source EANs before any color is generated. A later item's
     # original barcode must never get stolen by an earlier synthetic color.
     originals = {entry['barcode'] for plan in plans for entry in plan['entries']}
-    for code in sorted(originals):
-        require(code not in reserved, f'原条码 {code} 撞号，已在 {reserved.get(code)}；请核对分组或已上架商品，不会自动改原条码。')
+    # 米拉维亚一个条码只能上一次:已上过的一律拦下,但一次列全,并说清怎么办。
+    taken = [f'{code}(已在 {reserved[code]})' for code in sorted(originals) if code in reserved]
+    if taken:
+        raise Problem(['这些条码已经上过(米拉维亚一个条码只能上一次):' + '、'.join(taken)
+                       + '。请问用户:是从 groups.json 里去掉它们,还是先在旧批次里删掉后再上;不会自动改条码。'])
     used = dict(reserved)
     used.update({code: '本批次原条码' for code in originals})
     planned_packs = {ean13('2' + str(qty) + entry['barcode'][-10:])
