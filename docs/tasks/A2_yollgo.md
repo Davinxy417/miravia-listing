@@ -34,6 +34,8 @@ agent 判断怎么分组(哪些条码是同一个链接的不同尺寸/颜色、
 
 ### 1. 浏览器(Playwright,已装 `playwright` 1.63)
 - 用系统自带 Edge:`channel="msedge"`,**不要** `playwright install` 下浏览器。
+- 依赖新增 `playwright`(用户已同意):写进 `requirements.txt`,`AGENTS.md` 的依赖说明一起改。
+  只有友购相关命令 import 它;没装时其他命令照常能用,友购命令提示怎么装。
 - 持久化配置目录放工作区 `<工作区>/.yollgo-browser/`(加进 `.gitignore` 说明里;工作区本来就不进仓库)。
 - `mlist.py yollgo-login`:有界面打开 Edge 到 `https://app.yollgo.com`,提示"请在弹出的窗口里登录友购",
   等到 `userid() !== -1` 就说"已登录"并关窗。**程序和 agent 都不经手密码**,只由用户在窗口里输入。
