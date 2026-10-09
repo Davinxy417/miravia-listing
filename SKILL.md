@@ -24,7 +24,8 @@ description: 把友购(Yollgo)批发商品做成米拉维亚(Miravia 西班牙�
    批发商资料(公司名、地址、邮箱、模板下拉里的制造商/欧盟负责人原文)。
 2. 让用户从米拉维亚后台下载批量上传模板(.xlsm)放进工作区 `template/`,`shop.json` 的 `template` 写文件名。
    批发商要先在后台 Setting → Manufacturer information management 登记成制造商和欧盟负责人,审核通过后重新下载模板,下拉里才有。
-3. `mlist yollgo-login`:弹出 Edge 窗口,请用户自己登录友购,登录一次以后会记住。
+3. 友购登录:`fetch` / `yollgo-search` 会自己弹出 Edge 窗口;没登录时请用户在窗口里登录(可以让 Edge 记住密码),窗口别关,查完自动关。
+   友购同一账号同一时间只认一个登录:抓货时手机 App 会被挤下线,反过来手机一登录这边就失效,重跑命令再登一次即可。
 
 ## 上一批货
 1. **建批次、收条码**:`mlist new-batch <名字>`(名字用日期+一句话,如 `2026-11-圣诞`),把用户给的条码一行一个写进批次的 `barcodes.txt`。

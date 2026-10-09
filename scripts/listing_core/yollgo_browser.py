@@ -113,8 +113,9 @@ def session(ws, login=False, notify=None):
     context = None
     with sync_playwright() as pw:
         try:
-            # 实测(10-09):友购登录态关掉浏览器再开就失效(接口 401),无界面也不行。
-            # 所以一律开可见窗口:没登录就请用户在这个窗口里登录,登录后在同一个窗口里查完再关。
+            # 友购同一账号同一时间只认一个登录(手机 App、别的浏览器登录都会把这里挤掉,接口回 401)。
+            # 所以一律开可见窗口:没登录就请用户在这个窗口里登录(用户把密码存在这个 Edge 里,点一下即可),
+            # 登录后在同一个窗口里查完再关。
             context = pw.chromium.launch_persistent_context(str(profile), channel='msedge', headless=False)
             page = context.pages[0] if context.pages else context.new_page()
             page.goto(URL, wait_until='domcontentloaded', timeout=60000)
