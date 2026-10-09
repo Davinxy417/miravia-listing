@@ -44,6 +44,11 @@ def parser():
         'fetch': '读取 barcodes.txt，搜友购报价、选批发商、保存原图和总览',
         'yollgo-search': '在一家友购批发商中搜索关键词或条码，寻找同系列商品',
         'build': '校验 groups.json，生成候选 SKU、颜色/组合装条码和变体目录',
+        'images-plan': '按批次、现有图片和审阅结果生成出图清单',
+        'images-finish': '整理原始图、脚本画尺寸、派生变体图并备份旧图',
+        'seedream': '按清单调用 BytePlus Seedream；先估算，加 --yes 才付费',
+        'images-sheet': '按组生成带 id 和状态的审阅拼图',
+        'images-review': '记录图片通过或重做及原因',
     }
     commands = {}
     for name, description in descriptions.items():
@@ -62,6 +67,19 @@ def parser():
     selection.add_argument('--all', action='store_true', help='处理全部商品组')
     selection.add_argument('--group', action='append', metavar='组名', help='指定组，可重复传入')
     commands['overlay'].add_argument('--demo', action='store_true', help='额外生成前三组的审阅拼图')
+    commands['images-plan'].add_argument('--mode', choices=('model-text', 'base-overlay'), default='model-text', help='默认模型设计带字；base-overlay 为无字底图加脚本叠字')
+    for name in ('images-finish', 'images-sheet'):
+        commands[name].add_argument('--group', action='append', help='指定组，可重复')
+        commands[name].add_argument('--only', nargs='+', help='完整 id，如 G01/crema/02')
+    commands['images-sheet'].add_argument('--pending', action='store_true', help='只看未通过审阅的')
+    commands['images-sheet'].add_argument('--name', default='review', help='拼图名字，批次 review/ 下；大量图片自动分页')
+    chosen = commands['seedream'].add_mutually_exclusive_group(required=True)
+    chosen.add_argument('--only', nargs='+', help='选择完整 id')
+    chosen.add_argument('--all-missing', action='store_true', help='只生成缺图，不包含重做；派生/共用图不扣费')
+    commands['seedream'].add_argument('--yes', action='store_true', help='确认预计张数及单位，允许调用付费接口')
+    commands['images-review'].add_argument('--ok', nargs='+', help='通过的完整 id，可多张')
+    commands['images-review'].add_argument('--redo', nargs='+', help='需重做的完整 id')
+    commands['images-review'].add_argument('--note', default='', help='重做原因，标记重做时必填')
     return p
 
 
@@ -102,6 +120,15 @@ def dispatch(args):
     if cmd == 'build':
         from listing_core.yollgo_build import build
         return build(ws, batch, shop, force=args.force)
+    if cmd.startswith('images-') and cmd in ('images-plan', 'images-finish', 'images-sheet', 'images-review'):
+        from listing_core import image_workflow as iw
+        if cmd == 'images-plan': return iw.plan(batch, args.mode)
+        if cmd == 'images-finish': return iw.finish(batch, args.group, args.only)
+        if cmd == 'images-sheet': return iw.sheet(batch, args.name, args.group, args.only, args.pending)
+        return iw.review(batch, args.ok, args.redo, args.note)
+    if cmd == 'seedream':
+        from listing_core.seedream import run
+        return run(batch, args.only, args.all_missing, args.yes)
     # No batch file may write through a pre-existing link outside its workspace.
     if cmd not in ('check', 'status'):
         for name in ('priced.csv', 'image_files.csv', 'images.csv', 'output'):
@@ -156,6 +183,7 @@ def main(argv=None):
                 print('请在弹出的窗口里登录友购', file=prompt, flush=True)
             output = dispatch(args)
         warnings = output.pop('warnings', [])
+        errors = output.pop('errors', [])
     except SystemExit as exc:
         if exc.code not in (None, 0): errors = ['命令参数不正确；请运行 --help 查看用法。']
         else:
@@ -171,15 +199,22 @@ def main(argv=None):
         errors = [f'无法读写 {exc.filename or exc}；请关闭占用文件的 Excel，确认目录权限后重试。']
     except Exception as exc:
         errors = [f'这一步未完成（{type(exc).__name__}）：{exc}；请核对对应批次文件和配置后重试。']
+    exit_code = output.pop('exit_code', 1 if errors else 0)
     result = dict(ok=not errors, warnings=warnings, errors=errors, **output)
     if json_mode:
         print(json.dumps(result, ensure_ascii=False, allow_nan=False))
     else:
+        if errors and output.get('needs_confirm'): print(output.get('message', ''))
         if not errors:
             print(output.get('message', '处理完成。'))
             if 'count' in output: print(f"共 {output['count']} 条。")
             for key in ('workspace', 'batch', 'output'):
                 if key in output: print(output[key])
+            for group, counts in output.get('summary', {}).items():
+                print(f"{group}：缺 {counts['missing']} / 已有 {counts['existing']} / 要重做 {counts['redo']}")
+            if 'image_review' in output:
+                r = output['image_review']
+                print(f"图片审阅：审过 {r['reviewed']} / 没审 {r['pending']} / 要重做 {r['redo']}")
             for category in output.get('categories', []): print(category)
             for product in output.get('products', []):
                 print(f"{product['barcode']}  {product['name']}  €{product['price']}")
@@ -192,7 +227,7 @@ def main(argv=None):
                     if 'error' in state: print(state['error'])
         for warning in warnings: print(f'提醒：{warning}')
         for error in errors: print(f'错误：{error}')
-    return 1 if errors else 0
+    return exit_code
 
 
 if __name__ == '__main__':

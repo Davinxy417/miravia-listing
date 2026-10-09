@@ -27,6 +27,8 @@ def import_content(source):
     content = read_json(source / 'data/content.json')
     fill, fill_tree = constants(source / 'scripts/fill_template.py')
     gpsr, gpsr_tree = constants(source / 'scripts/gpsr_labels.py')
+    jobs_path = source / 'scripts/seedream_jobs.py'
+    jobs = constants(jobs_path)[0] if jobs_path.is_file() else {}
     for key, values in (('CATEGORIES', fill), ('NAMES', gpsr), ('GENERAL', gpsr)):
         require(key in values, f'旧脚本缺少 {key} 字面常量；请检查是否选错旧项目。')
     colour_groups = set()
@@ -68,6 +70,11 @@ def import_content(source):
         item['gpsr_safety'] = copy.deepcopy(shortened.get(group, gpsr['GENERAL'].get(group, source_warnings)))
         item['sku_include_ean'] = group in colour_groups
         if group in suffixes: item['gpsr_measure_suffix'] = suffixes[group]
+    for group, item in content.items():
+        if group in jobs.get('PRODUCTS', {}):
+            item['image_description'] = jobs['PRODUCTS'][group]
+        if group in jobs.get('SCENES07', {}):
+            item['image_scenes07'] = copy.deepcopy(jobs['SCENES07'][group])
     return content
 
 

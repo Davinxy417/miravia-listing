@@ -36,4 +36,7 @@ def run(ws, batch, template):
              if not p.is_file() or not output.exists() or p.stat().st_mtime_ns > output.stat().st_mtime_ns]
     steps['output'] = dict(**file_info(output), ready=output.is_file(), fresh=output.is_file() and not newer and steps['pricing']['fresh'], newer_inputs=newer)
     steps['image_directory'] = dict(exists=images_dir.is_dir(), linked=images_dir.resolve() != images_dir.absolute())
-    return dict(steps=steps, message='进度由当前文件推算；fresh=false 表示需要重做。')
+    from .image_workflow import progress
+    try: review = progress(batch)
+    except (ValueError, KeyError, OSError) as exc: review = dict(reviewed=0, pending=0, redo=0, error=f'图片审阅状态暂无法推算：{exc}')
+    return dict(steps=steps, image_review=review, message='进度由当前文件推算；fresh=false 表示需要重做。')

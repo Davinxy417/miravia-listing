@@ -4,7 +4,8 @@ import re
 from decimal import Decimal, InvalidOperation
 from .common import Problem, require
 
-INHERITED = ('category', 'gpsr_name', 'gpsr_safety', 'sku_include_ean', 'gpsr_measure_suffix')
+INHERITED = ('category', 'gpsr_name', 'gpsr_safety', 'sku_include_ean', 'gpsr_measure_suffix',
+             'image_description', 'image_scenes07')
 
 
 def resolve_content(raw, groups):
@@ -59,6 +60,12 @@ def content_errors(group, item):
             bad('安全提示须使用非空 <li>文字</li> 条目')
         if item.get('warning') == 'No' and text: bad('warning 为 No 时 warning_text 应留空')
     if 'sku_include_ean' in item and not isinstance(item['sku_include_ean'], bool): bad('sku_include_ean 须为 true/false')
+    if 'image_description' in item and (not isinstance(item['image_description'], str) or not item['image_description'].strip()):
+        bad('image_description 应是非空中文外观摘要')
+    if 'image_scenes07' in item:
+        scenes = item['image_scenes07']
+        if not isinstance(scenes, list) or len(scenes) not in (0, 4) or not all(isinstance(s, str) and s.strip() for s in scenes):
+            bad('image_scenes07 应为空数组或四个非空场景说明')
     for key, value in item.items():
         if isinstance(value, str) and re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', value):
             bad(f'{key} 含 Excel 不支持的控制字符')
