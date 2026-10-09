@@ -1,0 +1,17 @@
+# AGENTS.md — miravia-listing
+
+这是一个 skill(Claude Code 和 Codex 通用):把友购(Yollgo)批发商品做成米拉维亚(Miravia 西班牙站)
+批量上传 Excel。仓库根目录就是 skill 目录(`SKILL.md` 在根上)。使用者是不懂代码的店主,
+所有给人看的提示用中文、说人话,出错时说清楚"哪里不对、该怎么办"。
+
+- 入口:`python scripts/mlist.py <步骤> ...`(所有步骤都走它;以后的本地网页也调它)
+- 工作区(每人一份,不在本仓库):店铺配置 `shop.json`、官方模板、批次数据、图片、输出。
+- 冒烟测试:`python tests/smoke_test.py`(必须打印 `SMOKE OK`)
+- Python 3.12;依赖只用 openpyxl、Pillow,要加别的先问。
+- 米拉维亚官方 .xlsm 模板必须原样保留宏和数据校验:只改 `Pantilla` 表的 sheetData,其他 ZIP 成员逐字节复制。
+- 电商经验(写标题/文案、改定价、选品):`references/电商经验.md`,是参考不是死规定。
+
+规矩:
+- 不要 git commit,不要动 `.git`。
+- 仓库里不放密钥、店铺私有数据、商品图片、模板以外的大文件。
+- 临时文件放仓库内 `.tmp/`(已忽略)。
