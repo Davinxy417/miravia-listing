@@ -148,6 +148,13 @@ def run(template, batch, shop, check=False):
         if local_errors: raise Problem(local_errors, warnings)
         return dict(count=len(values), warnings=warnings, upload_ready=not warnings, message='检查完成，未写入文件。')
     out = inside(batch, batch / 'output/miravia_upload.xlsm')
+    write_upload(template, out, values, columns, width)
+    return dict(count=len(values), groups=len({r[columns['group']-1] for r in values}), output=str(out), warnings=warnings, upload_ready=not warnings)
+
+
+def write_upload(template, out, values, columns, width):
+    """完整或分批表共用同一 ZIP 复制及完整性检查。"""
+    out = Path(out)
     require(out != Path(template).resolve(), '输出不能覆盖模板；请改用独立 output/ 目录。')
     out.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(dir=out.parent, suffix='.xlsm', delete=False) as f:
@@ -163,4 +170,3 @@ def run(template, batch, shop, check=False):
         pending.replace(out)
     finally:
         pending.unlink(missing_ok=True)
-    return dict(count=len(values), groups=len({r[columns['group']-1] for r in values}), output=str(out), warnings=warnings, upload_ready=not warnings)

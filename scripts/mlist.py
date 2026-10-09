@@ -49,6 +49,9 @@ def parser():
         'seedream': '按清单调用 BytePlus Seedream；先估算，加 --yes 才付费',
         'images-sheet': '按组生成带 id 和状态的审阅拼图',
         'images-review': '记录图片通过或重做及原因',
+        'image-host-setup': '建立或使用公开 GitHub 图床；先预览，加 --yes 才操作',
+        'publish-images': '发布本批次审过的成品；先预览，加 --yes 才推送',
+        'finalize': '收集图片、使用已发布网址、填表检查；可分批并更新上架台账',
     }
     commands = {}
     for name, description in descriptions.items():
@@ -80,6 +83,13 @@ def parser():
     commands['images-review'].add_argument('--ok', nargs='+', help='通过的完整 id，可多张')
     commands['images-review'].add_argument('--redo', nargs='+', help='需重做的完整 id')
     commands['images-review'].add_argument('--note', default='', help='重做原因，标记重做时必填')
+    commands['image-host-setup'].add_argument('--repo', required=True, metavar='账号/仓库名', help='填仓库名或账号/仓库名；已有公开仓库直接用，不覆盖旧内容')
+    commands['image-host-setup'].add_argument('--branch', default='main', help='图床分支，默认 main；已有其他分支时可指定')
+    commands['image-host-setup'].add_argument('--yes', action='store_true', help='确认公开操作；不加仅说明计划并退出 2')
+    commands['publish-images'].add_argument('--yes', action='store_true', help='确认推送；不加仅列张数、总大小、目标和跳过图片，退出 2')
+    commands['publish-images'].add_argument('--include-unreviewed', action='store_true', help='明确允许发布没审过、图片变化或要求重做的现有成品；仍须 --yes')
+    commands['finalize'].add_argument('--max-groups', type=int, metavar='N', help='每份最多 N 个链接；主组和 B 组不拆开，它们各占一个链接')
+    commands['finalize'].add_argument('--base-url', metavar='网址前缀', help='可选：为手动托管图片生成网址；GitHub 发布后无需填写，不联网不推送')
     return p
 
 
@@ -95,6 +105,9 @@ def dispatch(args):
         from listing_core.legacy import run
         return run(ws, args.source, getattr(args, 'batch', None))
     shop = load_shop(ws)
+    if cmd == 'image-host-setup':
+        from listing_core.image_host import setup
+        return setup(ws, shop, args.repo, args.yes, args.branch)
     if cmd == 'yollgo-login':
         from listing_core.yollgo_browser import login
         # main captures stdout; send interactive instructions before its redirect.
@@ -112,6 +125,12 @@ def dispatch(args):
         finally: wb.close()
         return dict(categories=values, count=len(values))
     batch = batch_path(ws, getattr(args, 'batch', None))
+    if cmd == 'publish-images':
+        from listing_core.image_host import publish
+        return publish(ws, batch, shop, args.yes, args.include_unreviewed)
+    if cmd == 'finalize':
+        from listing_core.finalize import finalize
+        return finalize(ws, batch, shop, template_path(ws, shop), args.max_groups, args.base_url)
     if cmd == 'fetch':
         from listing_core.yollgo_browser import session
         from listing_core.yollgo import fetch
@@ -173,6 +192,7 @@ def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     json_mode = '--json' in argv
     output, errors, warnings = {}, [], []
+    args = None
     logs = io.StringIO()
     try:
         with contextlib.redirect_stdout(logs), contextlib.redirect_stderr(logs):
@@ -201,6 +221,8 @@ def main(argv=None):
         errors = [f'这一步未完成（{type(exc).__name__}）：{exc}；请核对对应批次文件和配置后重试。']
     exit_code = output.pop('exit_code', 1 if errors else 0)
     result = dict(ok=not errors, warnings=warnings, errors=errors, **output)
+    if args is not None and args.command == 'finalize':
+        result.setdefault('upload_ready', False)
     if json_mode:
         print(json.dumps(result, ensure_ascii=False, allow_nan=False))
     else:
@@ -225,6 +247,8 @@ def main(argv=None):
                     if 'fresh' in state: status += '，已更新' if state['fresh'] else '，需更新'
                     print(f'{labels[stage]}：{status}')
                     if 'error' in state: print(state['error'])
+        for item in output.get('files', []): print(f"拟发布：{item['id']} → {item['path']}")
+        for item in output.get('skipped', []): print(f"跳过：{item['id']}（{item['reason']}）")
         for warning in warnings: print(f'提醒：{warning}')
         for error in errors: print(f'错误：{error}')
     return exit_code

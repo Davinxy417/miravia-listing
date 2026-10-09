@@ -137,6 +137,9 @@ def load_shop(ws):
     if not isinstance(shop['sku']['prefix'], str) or not shop['sku']['prefix'].isalnum():
         errors.append('sku.prefix 只能包含字母和数字')
     if errors: raise Problem([f'shop.json：{e}；请修改后重试。' for e in errors])
+    if shop.get('image_host') is not None:
+        from .image_host import validate_host
+        validate_host(shop['image_host'])
     template_path(ws, shop, must_exist=False)
     return shop
 
