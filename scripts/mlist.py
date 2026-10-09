@@ -40,6 +40,10 @@ def parser():
         'overlay': '用 Pillow 在现有底图上叠字，不联网、不生成 AI 图片',
         'images-collect': '收集主推款展示图和每个变体的图片到 image_files.csv',
         'images-urls': '根据图床前缀生成 images.csv；只生成网址，不上传图片',
+        'yollgo-login': '打开系统 Edge，请在窗口里自行登录友购；不经手密码',
+        'fetch': '读取 barcodes.txt，搜友购报价、选批发商、保存原图和总览',
+        'yollgo-search': '在一家友购批发商中搜索关键词或条码，寻找同系列商品',
+        'build': '校验 groups.json，生成候选 SKU、颜色/组合装条码和变体目录',
     }
     commands = {}
     for name, description in descriptions.items():
@@ -51,6 +55,9 @@ def parser():
     commands['import-legacy'].add_argument('--from', dest='source', required=True, metavar='旧项目路径', help='含 data、scripts、images、template 的旧目录，只读')
     commands['categories'].add_argument('--search', default='', metavar='关键词', help='按完整类目文字包含匹配，留空列出全部')
     commands['images-urls'].add_argument('--base-url', required=True, metavar='网址前缀', help='图床 images 根地址，HTTP(S)，不含查询参数')
+    commands['yollgo-search'].add_argument('--shop', required=True, metavar='商家id', help='友购批发商 id，保留前导零，例如 027')
+    commands['yollgo-search'].add_argument('keyword', metavar='关键词或条码', help='含空格时用引号括起来，如 "MANTA BORREGO"')
+    commands['build'].add_argument('--force', action='store_true', help='明确覆盖已有候选商品和变体映射，随后必须重新 price')
     selection = commands['overlay'].add_mutually_exclusive_group(required=True)
     selection.add_argument('--all', action='store_true', help='处理全部商品组')
     selection.add_argument('--group', action='append', metavar='组名', help='指定组，可重复传入')
@@ -70,6 +77,15 @@ def dispatch(args):
         from listing_core.legacy import run
         return run(ws, args.source, getattr(args, 'batch', None))
     shop = load_shop(ws)
+    if cmd == 'yollgo-login':
+        from listing_core.yollgo_browser import login
+        # main captures stdout; send interactive instructions before its redirect.
+        return login(ws)
+    if cmd == 'yollgo-search':
+        from listing_core.yollgo_browser import session
+        from listing_core.yollgo import search
+        with session(ws) as client:
+            return search(client, args.shop, args.keyword)
     if cmd == 'categories':
         import openpyxl
         from listing_core.headers import dropdown
@@ -78,6 +94,14 @@ def dispatch(args):
         finally: wb.close()
         return dict(categories=values, count=len(values))
     batch = batch_path(ws, getattr(args, 'batch', None))
+    if cmd == 'fetch':
+        from listing_core.yollgo_browser import session
+        from listing_core.yollgo import fetch
+        with session(ws) as client:
+            return fetch(ws, batch, shop, client)
+    if cmd == 'build':
+        from listing_core.yollgo_build import build
+        return build(ws, batch, shop, force=args.force)
     # No batch file may write through a pre-existing link outside its workspace.
     if cmd not in ('check', 'status'):
         for name in ('priced.csv', 'image_files.csv', 'images.csv', 'output'):
@@ -121,6 +145,10 @@ def main(argv=None):
     try:
         with contextlib.redirect_stdout(logs), contextlib.redirect_stderr(logs):
             args = parser().parse_args(argv)
+            if args.command == 'yollgo-login':
+                # JSON stdout remains one object; the prompt is timely on stderr.
+                prompt = sys.__stderr__ if json_mode else sys.__stdout__
+                print('请在弹出的窗口里登录友购', file=prompt, flush=True)
             output = dispatch(args)
         warnings = output.pop('warnings', [])
     except SystemExit as exc:
@@ -148,6 +176,8 @@ def main(argv=None):
             for key in ('workspace', 'batch', 'output'):
                 if key in output: print(output[key])
             for category in output.get('categories', []): print(category)
+            for product in output.get('products', []):
+                print(f"{product['barcode']}  {product['name']}  €{product['price']}")
             if 'steps' in output:
                 labels = dict(barcodes='条码清单', candidates='候选商品', pricing='定价', content='文案', image_files='本地图片清单', images='图片网址', output='上传表', image_directory='图片目录')
                 for stage, state in output['steps'].items():

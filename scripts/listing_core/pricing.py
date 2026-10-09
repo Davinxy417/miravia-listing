@@ -1,8 +1,9 @@
 """沿用旧项目计算顺序，参数全部由 shop.json 提供。"""
 import math
+import hashlib
 from collections import defaultdict
 
-from .common import Problem, read_csv, require, write_csv
+from .common import Problem, read_csv, read_json, require, write_csv
 
 
 def ean_ok(code):
@@ -15,7 +16,7 @@ def ean_ok(code):
     return (10 - total % 10) % 10 == check
 
 
-def calculate(rows, shop):
+def calculate(rows, shop, cost_basis='unit'):
     require(bool(rows), 'candidates.csv 没有商品；请先导入或填写候选商品。')
     p = shop['pricing']
     fee_rate = sum(p['fees'].values())
@@ -25,11 +26,13 @@ def calculate(rows, shop):
         r = dict(original)
         label = f'candidates.csv 第 {n} 行 {r.get("group", "")}/{r.get("art_id", "")}'
         try:
-            nums = {k: float(r[k]) for k in ('pack_qty', 'unit_cost_ex_iva', 'weight_kg', 'len_cm', 'wid_cm', 'hei_cm', 'market_low', 'market_high')}
+            nums = {k: float(r[k]) for k in ('pack_qty', 'unit_cost_ex_iva', 'weight_kg', 'len_cm', 'wid_cm', 'hei_cm')}
+            for key in ('market_low', 'market_high'):
+                if str(r.get(key, '')).strip(): nums[key] = float(r[key])
             for key, value in nums.items():
                 require(math.isfinite(value) and value > 0, f'{label} 的 {key} 必须为正数；请核对商品数据。')
             qty = int(r['pack_qty'])
-            cost = nums['unit_cost_ex_iva'] * p['cost_factor'] * qty
+            cost = nums['unit_cost_ex_iva'] * p['cost_factor'] * (1 if cost_basis == 'pack' else qty)
             billable = max(nums['weight_kg'], nums['len_cm'] * nums['wid_cm'] * nums['hei_cm'] / p['volumetric_divisor'])
             ship = next((fee for limit, fee in p['ship_tiers'] if billable <= limit), p['ship_tiers'][-1][1])
             profit = max(p['min_profit'], cost * p['profit_rate'])
@@ -42,7 +45,7 @@ def calculate(rows, shop):
                      profit_no_coupon=round(net - cost - p['packaging'], 2),
                      profit_with_coupon=round(net_coupon - cost - p['packaging'], 2),
                      min_safe_price=round(floor, 2), max_discount_pct=max(0, math.floor((1 - floor / price) * 100)),
-                     ean_valid=ean_ok(r['ean']), vs_market='OK' if price <= nums['market_high'] else 'ABOVE')
+                     ean_valid=ean_ok(r['ean']), vs_market=('OK' if price <= nums['market_high'] else 'ABOVE') if 'market_high' in nums else '')
             out.append(r)
         except (ValueError, KeyError, OverflowError) as exc:
             errors.append(f'{label}：{exc}；请修正该行数值后重新定价。')
@@ -59,6 +62,14 @@ def calculate(rows, shop):
 
 
 def run(batch, shop):
-    rows, warnings = calculate(read_csv(batch / 'candidates.csv'), shop)
+    basis = 'unit'
+    manifest = batch / 'build.json'
+    if manifest.exists():
+        data = read_json(manifest)
+        require(isinstance(data, dict) and data.get('version') == 1 and data.get('cost_basis') == 'pack', 'build.json 成本口径无效；请重新 build --force。')
+        require(data.get('candidates_sha256') == hashlib.sha256((batch / 'candidates.csv').read_bytes()).hexdigest(),
+                'candidates.csv 与 build.json 不一致（可能手动改过或生成中断）；请在 groups.json 修改后重新 build --force，再运行 price。')
+        basis = 'pack'
+    rows, warnings = calculate(read_csv(batch / 'candidates.csv'), shop, cost_basis=basis)
     write_csv(batch / 'priced.csv', rows)
     return {'count': len(rows), 'output': str(batch / 'priced.csv'), 'warnings': warnings}

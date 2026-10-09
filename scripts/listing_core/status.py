@@ -24,6 +24,7 @@ def run(ws, batch, template):
         else: info['ready'] = False
         steps[stage] = info
     pricing_inputs = [batch / 'candidates.csv', Path(ws) / 'shop.json']
+    if (batch / 'build.json').is_file(): pricing_inputs.append(batch / 'build.json')
     steps['pricing']['fresh'] = steps['pricing']['ready'] and all(p.is_file() and p.stat().st_mtime_ns <= (batch/'priced.csv').stat().st_mtime_ns for p in pricing_inputs)
     output = batch / 'output/miravia_upload.xlsm'
     inputs = [Path(ws) / 'shop.json', template, *[batch / n for n in ('candidates.csv', 'priced.csv', 'content.json', 'variantes.csv')]]

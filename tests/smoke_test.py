@@ -209,7 +209,7 @@ def main():
     cli(ws,'new-batch','../escape',ok=False)
     cli(ws,'fill',ok=False)
     cli(ws,'不存在',ok=False)
-    for cmd in ('init','new-batch','import-legacy','price','fill','check','status','categories','gpsr','overlay','images-collect','images-urls'):
+    for cmd in ('init','new-batch','import-legacy','price','fill','check','status','categories','gpsr','overlay','images-collect','images-urls','yollgo-login','fetch','yollgo-search','build'):
         assert cli(ws,cmd,'--help')['help']
     assert cli(ws,'--help')['help']
     print('命令回归：全部帮助、JSON、配置缺项、批量报错、失败保留输出和只读检查均通过')

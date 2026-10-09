@@ -12,8 +12,8 @@ skill 要给用户和他妹妹用,**她的电脑上没有旧项目、也没有�
 
 ## 1. 规则文档(写进 `references/`)
 读这些,整理成本仓库自己的规则(中文,写给 agent 看,短而准,能直接照做;西语原文术语保留):
-- 用户给的主规则:`E:\我的文件\文档\Codex\2026-10-07\p\outputs\INSTRUCCIONES_IA_MIRAVIA_GPSR.md`、`FUENTES_Y_CRITERIOS.md`、`EJEMPLOS_ENTRENAMIENTO.jsonl`
-- 用户的图片项目:`E:\我的文件\文档\HiperYang电商\电商商品图片规则.md`、`商品图片批量制作流程.md`、`商品图片Agent套件\AGENTS.md`、`Prompt-Library.md`
+- 用户给的主规则:`E:\文档\Codex\2026-10-07\p\outputs\INSTRUCCIONES_IA_MIRAVIA_GPSR.md`、`FUENTES_Y_CRITERIOS.md`、`EJEMPLOS_ENTRENAMIENTO.jsonl`
+- 用户的图片项目:`E:\文档\HiperYang电商\电商商品图片规则.md`、`商品图片批量制作流程.md`、`商品图片Agent套件\AGENTS.md`、`Prompt-Library.md`
 - 旧项目做图任务包:`docs\codex_img_common.md`、`codex_img_v2.md`、`codex_img_people.md`、`codex_img_pilot.md`、`codex_img_set.md`、
   `codex_task_04_gpsr_labels.md`、`codex_task_07_infografia.md`、`docs\图片叠字.md`、`scripts\seedream_jobs.py`(里面的 prompt 写法)
 - 旧项目 `docs\交接.md`(用户拍板过的事,**以它为准**,见下)、`docs\电商经验.md`、`data\content.json`(现成文案的样子)、`scripts\fill_template.py` 的 `validate_content`
@@ -63,7 +63,7 @@ sheet 能出图、review 的记录、seedream 不带 `--yes` 不出图且不读�
 
 ## 做完的标准
 1. 所有测试通过(贴最后几行)。
-2. 对旧批次只读跑一遍:`python scripts/mlist.py images-plan --batch 2026-10-冬季第一批`(工作区在 `E:\我的文件\文档\Miravia工作区`,
+2. 对旧批次只读跑一遍:`python scripts/mlist.py images-plan --batch 2026-10-冬季第一批`(工作区在 `E:\文档\Miravia工作区`,
    已导入旧项目这批货;**只读**,写到 `.tmp/` 的副本里也行),贴汇总:每组缺几张、已有几张。
 3. `references/出图规则.md`、`references/文案规则.md` 各自能单独看懂,不引用本机其他路径。
 

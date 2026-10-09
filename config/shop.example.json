@@ -56,28 +56,40 @@
       "address": "Calle Maestrat, 18, 46940 Manises, Valencia, España",
       "email": "haoonline@gmail.com",
       "fabricante": "HAOONLINE S.L, 2680340, 2026-10-07",
-      "responsable": "HAOONLINE S.L, 514, 2026-10-07"
+      "responsable": "HAOONLINE S.L, 514, 2026-10-07",
+      "price_includes_iva": false
     },
     "3321": {
       "company": "H&J TEXHOGAR S.L.U",
       "address": "Avinguda de la Cova, 166, 46940 Manises, Valencia, España",
       "email": "hjtexhogar@gmail.com",
       "fabricante": "H&J TEXHOGAR S.L.U, 2682335, 2026-10-07",
-      "responsable": "H&J TEXHOGAR S.L.U, 516, 2026-10-07"
+      "responsable": "H&J TEXHOGAR S.L.U, 516, 2026-10-07",
+      "price_includes_iva": false
     },
     "027": {
       "company": "ZHENGDA COMERCIO",
       "address": "Calle Alcalatén, 1, Pol. Ind. La Cova, 46940 Manises, Valencia, España",
       "email": "zhengdacomercio@gmail.com",
       "fabricante": "ZHENGDA COMERCIO, 2734065, 2026-10-07",
-      "responsable": "ZHENGDA COMERCIO, 518, 2026-10-07"
+      "responsable": "ZHENGDA COMERCIO, 518, 2026-10-07",
+      "price_includes_iva": false
     },
     "6850": {
       "company": "ZHENGDA COMERCIO",
       "address": "Calle Alcalatén, 1, Pol. Ind. La Cova, 46940 Manises, Valencia, España",
       "email": "zhengdacomercio@gmail.com",
       "fabricante": "ZHENGDA COMERCIO, 2734065, 2026-10-07",
-      "responsable": "ZHENGDA COMERCIO, 518, 2026-10-07"
+      "responsable": "ZHENGDA COMERCIO, 518, 2026-10-07",
+      "price_includes_iva": false
+    },
+    "2822": {
+      "company": "请填写旺达的西语公司名",
+      "address": "请填写核实后的公司地址",
+      "email": "请填写核实后的联系邮箱",
+      "fabricante": "请填写后台审核通过后模板制造商下拉原文",
+      "responsable": "请填写后台审核通过后模板欧盟负责人下拉原文",
+      "price_includes_iva": true
     }
   },
   "image_host": null

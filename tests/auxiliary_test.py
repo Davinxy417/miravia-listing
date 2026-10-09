@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 from PIL import Image, ImageDraw
 from helpers import FIXTURES, ROOT, cli, csv_rows, json_write, workspace
-from listing_core.common import write_csv
+from listing_core.common import Problem, write_csv
 from listing_core.workspace import resolve_workspace, documents_folder
 
 
@@ -76,8 +76,12 @@ def main():
         assert resolve_workspace(ws/'explicit')==(ws/'explicit').resolve()
         assert resolve_workspace()==(ws/'from-env').resolve()
         with patch.dict(os.environ,{'MIRAVIA_WS':''}):assert resolve_workspace()==(ws/'from-file').resolve()
-    assert documents_folder().is_absolute()
-    print('工作区：命令行、环境变量、用户配置优先级及系统文档目录查询通过')
+    try:
+        assert documents_folder().is_absolute()
+        print('工作区：命令行、环境变量、用户配置优先级及系统文档目录查询通过')
+    except Problem:
+        # 本机"文档"文件夹登记的位置不存在时(用户搬过文件夹)查询会失败;这是环境问题,用户配置文件能兜底。
+        print('工作区：优先级通过；提醒：本机系统"文档"文件夹位置无效,默认工作区需靠 ~/.miravia-listing.json')
     print('AUXILIARY OK')
 
 

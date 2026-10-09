@@ -88,6 +88,9 @@ def load_shop(ws):
             return
         for key, expected in sample.items():
             where = f'{prefix}.{key}'
+            # A2 optional supplier field: existing A1 shop.json stays valid.
+            if key == 'price_includes_iva' and key not in value:
+                continue
             if key not in value:
                 errors.append(f'缺少 {where}')
             elif key == 'suppliers':
@@ -110,6 +113,10 @@ def load_shop(ws):
             elif not isinstance(value[key], type(expected)) or (isinstance(expected, str) and not value[key].strip()):
                 errors.append(f'{where} 类型不对或为空')
     structure(shop, schema, 'shop.json')
+    if isinstance(shop, dict) and isinstance(shop.get('suppliers'), dict):
+        for sid, supplier in shop['suppliers'].items():
+            if isinstance(supplier, dict) and 'price_includes_iva' in supplier and not isinstance(supplier['price_includes_iva'], bool):
+                errors.append(f'shop.json.suppliers.{sid}.price_includes_iva 应是 true/false')
     if errors:
         raise Problem([f'{e}；请参照 references/店铺配置.md 补齐。' for e in errors])
     p = shop['pricing']

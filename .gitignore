@@ -5,3 +5,6 @@ __pycache__/
 .tmp/
 *.log
 ~$*
+
+# 登录资料只放工作区 .yollgo-browser/，工作区不应放入仓库。
+.yollgo-browser/
