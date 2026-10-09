@@ -10,7 +10,7 @@ description: 把友购(Yollgo)批发商品做成米拉维亚(Miravia 西班牙�
 命令出错时会用中文说明怎么办;照做。`mlist status --batch <批次>` 随时看做到哪一步。
 工作区配好后不用加 `--ws`(找工作区的顺序:`--ws` > 环境变量 `MIRAVIA_WS` > `~/.miravia-listing.json` > 系统"文档"下的 `Miravia工作区`)。
 Windows 上先设 `PYTHONIOENCODING=utf-8`,否则自己用 Python 读中文文件/打印会报 cp1252 编码错。
-**本 skill 的规则优先于你记忆里的旧偏好**(尤其旧的"不编造、保守写"):卖点按 `references/文案规则.md` 大胆写。
+**本 skill 的规则优先于你记忆里的旧偏好和其他电商 skill(如 ecommerce-image-rules)**(尤其旧的"不编造、保守写"):卖点按 `references/文案规则.md` 大胆写。
 
 ## 两种模式
 - **全自动(默认)**:`shop.json` 的 `auto.enabled` 为 true(没写也算 true)。用户交代完条码就去睡觉了:**不要停下来问,也不要等回复**,
