@@ -49,11 +49,11 @@ Windows 上先设 `PYTHONIOENCODING=utf-8`,否则自己用 Python 读中文文�
 4. **定价**:`mlist price --batch <批次>`。→ **给用户看**:每个 SKU 进价、售价、每单利润;有价差提醒也说。用户要改就改 `shop.json` 或单个价格再重跑。
 5. **文案**:按 `references/文案规则.md` 写 `content.json`(标题、描述、属性、安全提示、类目、GPSR 短名、出图用的外观描述)
    和 `overlays.json`(图上的西语文字)。类目用 `mlist categories --search <词>` 查原文。写完 `mlist check --batch <批次>` 直到没有错误。
-6. **出图**:`mlist images-plan --batch <批次>`,照 `image_plan.md` 一张张做,规则见 `references/出图规则.md`。
-   - 你是 Codex:用自带图像生成,原图存到清单写的 `internal/raw/`。额度用完(429)就停,告诉用户恢复时间,问要不要用 Seedream 补。
-   - 你是 Claude:自己不能出图。本机有 `~/.agent-bridge/codex.cmd` 就把 `image_plan.md` 里没做的部分转给 Codex
-     (`codex exec`,任务里写清批次路径和"照 image_plan.md 做,只写 internal/raw/");没有就用 Seedream。
-   - Seedream:`mlist seedream --batch <批次> --only <id>...`,先不带 `--yes` 看张数和费用,**问用户**再加 `--yes`。
+6. **出图**(一律用 Seedream API,不用 Codex/GPT 自带出图):`mlist images-plan --batch <批次>`,规则见 `references/出图规则.md`。
+   - 先只出每个变体的 01:`mlist seedream --batch <批次> --only <组/变体/01>...`,先不带 `--yes` 看张数和费用,**问用户**再加 `--yes`。
+     01 审过以后重跑 `images-plan`,再出其余位置(同样先看费用、问用户)。
+   - 04/05/08 要真人素材:先从 Pexels/Unsplash 下载合适的照片放进批次,记进 `stock_fotos.csv`,再出这几张。
+   - 报"缺 ARK_API_KEY":请用户自己在终端设 Key(见 README.md"安装"),你不读也不写 Key。
    - 生成完 `mlist images-finish --batch <批次>`,再 `mlist images-sheet --batch <批次> --pending` 出审阅拼图。
    → **给用户看拼图**,按他说的 `mlist images-review --ok ... / --redo <id> --note "..."`;重做的回到 images-plan。
 7. **GPSR 标签**:`mlist gpsr --batch <批次>`,告诉用户 `output/gpsr/print_A4.pdf` 在哪,打印贴货。
