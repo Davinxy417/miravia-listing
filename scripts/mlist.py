@@ -43,6 +43,7 @@ def parser():
         'yollgo-login': '打开系统 Edge，先尝试已保存密码的自动填充；失败请手动登录',
         'fetch': '读取 barcodes.txt，搜友购报价、选批发商、保存原图和总览',
         'yollgo-search': '在一家友购批发商中搜索关键词或条码，寻找同系列商品',
+        'keywords': '查亚马逊西班牙/Google 西班牙搜索联想(真实买家搜索词),写标题前用',
         'build': '校验 groups.json，生成候选 SKU、颜色/组合装条码和变体目录',
         'images-plan': '按批次、现有图片和审阅结果生成出图清单',
         'images-finish': '整理原始图、脚本画尺寸、派生变体图并备份旧图',
@@ -66,6 +67,7 @@ def parser():
     commands['images-urls'].add_argument('--base-url', required=True, metavar='网址前缀', help='图床 images 根地址，HTTP(S)，不含查询参数')
     commands['yollgo-search'].add_argument('--shop', required=True, metavar='商家id', help='友购批发商 id，保留前导零，例如 027')
     commands['yollgo-search'].add_argument('keyword', metavar='关键词或条码', help='含空格时用引号括起来，如 "MANTA BORREGO"')
+    commands['keywords'].add_argument('seeds', nargs='+', metavar='种子词', help='品类+功能词,每个含空格的词用引号,如 "alcachofa ducha" "ducha filtro"')
     commands['build'].add_argument('--force', action='store_true', help='明确覆盖已有候选商品和变体映射，随后必须重新 price')
     for name in ('fetch', 'yollgo-search', 'yollgo-login'):
         commands[name].add_argument('--auto', action='store_true', help='无人值守：自动登录失败后最多等 10 分钟，再提示手动登录重跑')
@@ -122,6 +124,9 @@ def dispatch(args):
         from listing_core.yollgo import search
         with session(ws, notify=_tell, unattended=args.auto) as client:
             return search(client, args.shop, args.keyword)
+    if cmd == 'keywords':
+        from listing_core.keywords import suggest
+        return suggest(args.seeds)
     if cmd == 'categories':
         import openpyxl
         from listing_core.headers import dropdown

@@ -60,6 +60,7 @@ Windows 上先设 `PYTHONIOENCODING=utf-8`,否则自己用 Python 读中文文�
    → 看着做:给用户看一张短表(链接 / 包含哪些条码和颜色 / 估计重量)。然后 `mlist build --batch <批次>`。
 4. **定价**:`mlist price --batch <批次>`。有价差提醒就记 notes.md。→ 看着做:给用户看每个 SKU 进价、售价、每单利润。
 5. **调研同款**:按 `references/文案规则.md`"调研同款"一节上网找同款,写批次根 `research.json`(参考标题、卖点、规格、搜索词)。
+   再用 `mlist keywords "<品类词>" "<品类词+功能>" …` 查买家真实搜索词,写进 research.json 的 `keywords`,标题和描述末尾的 PALABRAS CLAVE 从这里挑。
 6. **文案**:按 `references/文案规则.md` 写 `content.json`(标题、描述、属性、安全提示、类目、GPSR 短名、出图用的外观描述、
    `use_scene` 真实用法、`hero_feature` 主打卖点)和 `overlays.json`(图上的西语文字,卖点取自 research.json)。
    初稿写完按"文案打磨"一节交给 Claude(或自己)改一轮,让描述和图上的字更诱人。类目用 `mlist categories --search <词>` 查原文。
