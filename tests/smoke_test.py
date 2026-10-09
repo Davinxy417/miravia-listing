@@ -74,7 +74,9 @@ def check_output(ws, batch, template):
             src=source[ean];group=src['group'];item={**raw.get(group.removesuffix('B'),{}),**raw[group]}
             assert get('Group No')==group
             assert get('Categoría')==item['category']
-            for h,k in [('Nombre del producto','title'),('Descripción','description'),('Atributos adicionales','attributes'),('¿El producto cuenta con advertencia de seguridad?','warning')]:assert get(h)==item[k]
+            desc=get('Descripción');assert re.sub(r'<p><img [^>]*/></p>','',desc)==item['description'] and len(desc)<=3000
+            assert all(u in urls.values() for u in re.findall(r'<img src="([^"]+)"',desc))
+            for h,k in [('Nombre del producto','title'),('Atributos adicionales','attributes'),('¿El producto cuenta con advertencia de seguridad?','warning')]:assert get(h)==item[k]
             assert (get('Contenido de la advertencia de seguridad') or '')==item['warning_text']
             assert get('Marca')==shop['brand']
             expected=f"{shop['sku']['prefix']}{src['shop']}-{src['art_id']}-{ean}"+(f"-P{src['pack_qty']}" if int(src['pack_qty'])>1 else '')

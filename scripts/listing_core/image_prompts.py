@@ -13,7 +13,7 @@ SLOT_PROMPTS = {
 }
 
 
-def make_prompt(slot, description, variant, qty, entry, mode, scenes=(), zoom=False, note=''):
+def make_prompt(slot, description, variant, qty, entry, mode, scenes=(), zoom=False, note='', use_scene='', hero_feature=''):
     text = [entry.get('title', ''), entry.get('subtitle', '')]
     text += [p['text'] for p in entry.get('points', [])]
     text += [s['title'] for s in entry.get('scenes', [])]
@@ -22,9 +22,14 @@ def make_prompt(slot, description, variant, qty, entry, mode, scenes=(), zoom=Fa
     lead = (f'一张独立 1:1 方图。当前商品：{description}。变体：{variant}。'
             f'{count}，型号、颜色、图案、结构按实际附件如实还原，不美化颜色，不过饱和。'
             '外观描述可能是主推款的摘要，当前变体附件及已确认变体值优先，不把其他颜色套到本款。'
-            '不要新增未知材质、接口、配件、尺寸、功效、认证。去掉参考图上叠加的中文、价格、水印；'
+            '不画认证标志，不新增参考图里没有的配件。去掉参考图上叠加的中文、价格、水印；'
             '产品自带印刷保留原貌，不重绘假二维码。场景道具不暗示随货赠送。')
     body = SLOT_PROMPTS[slot] + f' 放大圈开关 zoom={str(zoom).lower()}。'
+    if hero_feature and slot in ('02', '03'):
+        body += f' 这张图的重点：{hero_feature}。要让买家一眼看到这个卖点。'
+    if use_scene and slot in ('04', '05', '07', '08'):
+        body += (f' 商品真实用法：{use_scene}。场景必须合乎常识：该连的管线连着、该装的地方装着、在该用的位置使用，'
+                 '不要把商品拿到不相干的地方摆拍(例如花洒不能离开软管、出现在镜子或洗手台前)。')
     if slot == '02':
         body += ' 图标和对应文字：' + json.dumps(entry.get('points', []), ensure_ascii=False)
     if slot == '07':

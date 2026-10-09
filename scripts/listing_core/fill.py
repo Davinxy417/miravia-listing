@@ -14,6 +14,21 @@ from .pricing import ean_ok
 from .xlsm import patch_sheet, sheet_part, verify_integrity
 
 
+
+DESCRIPTION_MAX = 3000  # 模板 Descripción 上限
+
+
+def description_html(text, gallery):
+    """图床图插进描述:02 卖点图放最前,03 细节和 04/07/08 场景图放文字后;友购占位图不插。超长就从后往前少插。"""
+    real = lambda i: i < len(gallery) and gallery[i] and 'freex.es' not in gallery[i]
+    top = [gallery[1]] if real(1) else []
+    bottom = [gallery[i] for i in (2, 3, 6, 7) if real(i)]
+    tag = lambda url: f'<p><img src="{url}" style="width:100%"/></p>'
+    while True:
+        html = ''.join(map(tag, top)) + text + ''.join(map(tag, bottom))
+        if len(html) <= DESCRIPTION_MAX or not (top or bottom): return html
+        (bottom or top).pop()
+
 def prepare(template, batch, shop):
     errors, warnings = [], set()
     def read(fn, fallback):
@@ -101,7 +116,7 @@ def prepare(template, batch, shop):
             for row in variants:
                 maker = shop['suppliers'][row['shop']]
                 fields = dict(group=group, category=item['category'], title=item['title'], brand=shop['brand'],
-                              attributes=item['attributes'], description=item['description'], warning=item['warning'],
+                              attributes=item['attributes'], description=description_html(item['description'], gallery), warning=item['warning'],
                               warning_text=item['warning_text'], variant_image=principals[mappings[variant_key(row)]],
                               ean=row['ean'], sku=seller_sku(row, shop, item), price=number(row['price'], 'price'),
                               original_price=number(row['price'], 'price'), stock=shop['stock_default'],

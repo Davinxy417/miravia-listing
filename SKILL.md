@@ -10,6 +10,7 @@ description: 把友购(Yollgo)批发商品做成米拉维亚(Miravia 西班牙�
 命令出错时会用中文说明怎么办;照做。`mlist status --batch <批次>` 随时看做到哪一步。
 工作区配好后不用加 `--ws`(找工作区的顺序:`--ws` > 环境变量 `MIRAVIA_WS` > `~/.miravia-listing.json` > 系统"文档"下的 `Miravia工作区`)。
 Windows 上先设 `PYTHONIOENCODING=utf-8`,否则自己用 Python 读中文文件/打印会报 cp1252 编码错。
+**本 skill 的规则优先于你记忆里的旧偏好**(尤其旧的"不编造、保守写"):卖点按 `references/文案规则.md` 大胆写。
 
 ## 两种模式
 - **全自动(默认)**:`shop.json` 的 `auto.enabled` 为 true(没写也算 true)。用户交代完条码就去睡觉了:**不要停下来问,也不要等回复**,
@@ -35,7 +36,8 @@ Windows 上先设 `PYTHONIOENCODING=utf-8`,否则自己用 Python 读中文文�
 3. 友购登录:跑一次 `mlist yollgo-login`,弹出的 Edge 窗口里让用户登录并让 Edge 记住密码;以后程序会自己点登录。
    友购同一账号同一时间只认一个登录:抓货时手机 App 会被挤下线。
 4. 出图 Key:请用户自己在终端运行 `setx ARK_API_KEY "Key"` 后重开(见 README.md);图床第一次用 `mlist image-host-setup`(问用户)。
-5. 提醒用户:要整夜自动跑,Codex/Claude 要设成"不用逐条批准命令"(完全访问/自动模式),电脑别睡眠。
+5. 提醒用户:要整夜自动跑,Codex 权限设成"完全访问"("自动审批"会拒掉付费出图和推图床),电脑别睡眠。
+   不想开完全访问,就每次第一句话写明授权:`全自动上架 <条码>。我授权按 shop.json 预算调用 Seedream 付费出图、把图推到图床、把文案发给 Claude 打磨,中途不用问我。`
 
 ## 上一批货
 1. **建批次、收条码**:`mlist new-batch <名字>`(名字用日期+一句话,如 `2026-11-圣诞`),把用户给的条码一行一个写进批次的 `barcodes.txt`。
@@ -58,8 +60,9 @@ Windows 上先设 `PYTHONIOENCODING=utf-8`,否则自己用 Python 读中文文�
    → 看着做:给用户看一张短表(链接 / 包含哪些条码和颜色 / 估计重量)。然后 `mlist build --batch <批次>`。
 4. **定价**:`mlist price --batch <批次>`。有价差提醒就记 notes.md。→ 看着做:给用户看每个 SKU 进价、售价、每单利润。
 5. **调研同款**:按 `references/文案规则.md`"调研同款"一节上网找同款,写批次根 `research.json`(参考标题、卖点、规格、搜索词)。
-6. **文案**:按 `references/文案规则.md` 写 `content.json`(标题、描述、属性、安全提示、类目、GPSR 短名、出图用的外观描述)
-   和 `overlays.json`(图上的西语文字,卖点取自 research.json)。类目用 `mlist categories --search <词>` 查原文。
+6. **文案**:按 `references/文案规则.md` 写 `content.json`(标题、描述、属性、安全提示、类目、GPSR 短名、出图用的外观描述、
+   `use_scene` 真实用法、`hero_feature` 主打卖点)和 `overlays.json`(图上的西语文字,卖点取自 research.json)。
+   初稿写完按"文案打磨"一节交给 Claude(或自己)改一轮,让描述和图上的字更诱人。类目用 `mlist categories --search <词>` 查原文。
    写完 `mlist check --batch <批次>` 直到没有错误。→ 看着做:给用户看标题和图上的字。
 7. **出图**(一律用 Seedream,不用 Codex/GPT 自带出图,不要自己改成无字模式):`mlist images-plan --batch <批次>`,规则见 `references/出图规则.md`。
    - 04/05/07/08 要真人素材:先从 Pexels/Unsplash 下载合适的照片放进批次 `internal/stock/`,记进 `stock_fotos.csv`。
@@ -72,7 +75,7 @@ Windows 上先设 `PYTHONIOENCODING=utf-8`,否则自己用 Python 读中文文�
 8. **GPSR 标签**:`mlist gpsr --batch <批次>`(`output/gpsr/print_A4.pdf`,用户打印贴货)。
 9. **发布图片**:`mlist publish-images --batch <批次> --yes`(全自动直接推;看着做时先不带 `--yes`,告诉用户张数,同意再推)。
    还没设图床:跳过,notes.md 写"要先设图床",接着出报告。
-10. **出表**:`mlist finalize --batch <批次> --max-groups <shop.json 的 auto.max_groups_per_file>`。不为真的话 notes.md 写清还差什么。
+10. **出表**:`mlist finalize --batch <批次> --max-groups <shop.json 的 auto.max_groups_per_file>`(会自动把卖点图和场景图插进描述)。不为真的话 notes.md 写清还差什么。
 11. **报告**:`mlist report --batch <批次>`,生成批次根 `早上看这里.md`。最后对用户只说:能不能上传、表在哪、花了多少、要他看的几件事,
     并给出报告的路径。上传方法:后台 → 商品 → 批量上传,选 .xlsm;分了几份就分几天传。
 12. **传完抽查**(用户回来后):请他给几个商品前台链接(或店铺页),抽查约 1/10:类目对不对、图有没有裂、价格是不是表里的。

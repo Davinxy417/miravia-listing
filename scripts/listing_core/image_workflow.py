@@ -169,7 +169,8 @@ def make_plan(batch, mode='model-text'):
                 raw = raw_latest(batch, group, variant, slot) if method not in ('copy', 'derive') else None
                 prompt = '' if method in ('copy', 'derive') else make_prompt(slot, description, variant, qty, entry,
                               'base-overlay' if method in ('model', 'script', 'base-overlay') else mode,
-                              scenes=scenes, zoom=cfg.get('zoom', False), note=reason)
+                              scenes=scenes, zoom=cfg.get('zoom', False), note=reason,
+                              use_scene=item.get('use_scene', ''), hero_feature=item.get('hero_feature', ''))
                 if slot == '06':
                     dims, capacities = overlay.verified_specs(rows)
                     prompt += ' 脚本事实（禁止模型画字/数字）：' + str({'dims_cm': [] if base != group else dims,

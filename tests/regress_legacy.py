@@ -3,10 +3,18 @@ import json
 import sys
 from pathlib import Path
 from decimal import Decimal, InvalidOperation
+import re
 import openpyxl
 from helpers import ROOT, cli, csv_rows, workspace
 
 LEGACY = Path(r'E:\我的文件\桌面\Miravia')
+
+
+IMG = re.compile(r'<p><img [^>]*/></p>')  # 描述里自动插的图床图,旧基准没有
+
+
+def strip_img(v):
+    return IMG.sub('', v) if isinstance(v, str) else v
 
 
 def equal_cell(a, b):
@@ -42,7 +50,7 @@ def main():
         if (a.max_row,a.max_column)!=(b.max_row,b.max_column):diffs.append('Pantilla 行列数不同')
         for r in range(1,max(a.max_row,b.max_row)+1):
             for c in range(1,max(a.max_column,b.max_column)+1):
-                if a.cell(r,c).value!=b.cell(r,c).value:
+                if a.cell(r,c).value!=strip_img(b.cell(r,c).value):
                     diffs.append(f'Pantilla {a.cell(r,c).coordinate}：旧={a.cell(r,c).value!r} 新={b.cell(r,c).value!r}')
     finally:
         wb1.close();wb2.close()
