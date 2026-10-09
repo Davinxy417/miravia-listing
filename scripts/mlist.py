@@ -80,11 +80,11 @@ def dispatch(args):
     if cmd == 'yollgo-login':
         from listing_core.yollgo_browser import login
         # main captures stdout; send interactive instructions before its redirect.
-        return login(ws)
+        return login(ws, notify=_tell)
     if cmd == 'yollgo-search':
         from listing_core.yollgo_browser import session
         from listing_core.yollgo import search
-        with session(ws) as client:
+        with session(ws, notify=_tell) as client:
             return search(client, args.shop, args.keyword)
     if cmd == 'categories':
         import openpyxl
@@ -97,7 +97,7 @@ def dispatch(args):
     if cmd == 'fetch':
         from listing_core.yollgo_browser import session
         from listing_core.yollgo import fetch
-        with session(ws) as client:
+        with session(ws, notify=_tell) as client:
             return fetch(ws, batch, shop, client)
     if cmd == 'build':
         from listing_core.yollgo_build import build
@@ -135,6 +135,11 @@ def dispatch(args):
         rows = make_images_csv(args.base_url, batch / 'image_files.csv', batch / 'images.csv', batch / 'variantes.csv', batch / 'images')
         return dict(count=len(rows), output=str(batch / 'images.csv'))
     raise Problem('未知步骤；请运行 --help 查看可用命令。')
+
+
+def _tell(message):
+    # 交互提示走 stderr:stdout 可能被 --json 占用。
+    print(message, file=sys.stderr, flush=True)
 
 
 def main(argv=None):

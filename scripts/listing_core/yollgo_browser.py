@@ -8,11 +8,14 @@ USER_ID = "() => angular.element(document.querySelector('[ng-app]')).injector().
 READY = "() => !!(window.angular && document.querySelector('[ng-app]') && angular.element(document.querySelector('[ng-app]')).injector())"
 CALL = """async ({method, params}) => {
     const af = angular.element(document.querySelector('[ng-app]')).injector().get('ajaxFactory');
-    const result = method === 'shops' ? await af.shops() : await af[method](params);
+    const response = method === 'shops' ? await af.shops() : await af[method](params);
+    // $http wraps the body as response.data; the body itself carries code 1000 on success.
+    const body = response && response.data && 'code' in response.data ? response.data : response;
     // Never transfer authentication data out of the browser.
-    if (Number(result.code) !== 1000) return {ok: false};
+    if (!body || Number(body.code) !== 1000) return {ok: false};
     const key = method === 'shops' ? 'shop_lists' : 'articulo_lists';
-    if (!result.data || !Array.isArray(result.data[key])) return {ok: false};
+    if (!Array.isArray(body[key])) return {ok: false};
+    const result = {data: body};
     const publicFields = ['shopId','name','namees','des','tel','baseurl','imgurl'];
     // Product fields are kept raw, including future public product attributes.
     // Authentication envelopes never leave the page. Reject credential-named
@@ -70,6 +73,35 @@ class BrowserClient:
             raise Problem('友购原图下载失败；请检查网络后重新运行 fetch。') from None
 
 
+ALIVE = """async () => {
+    try {
+        const af = angular.element(document.querySelector('[ng-app]')).injector().get('ajaxFactory');
+        const response = await af.shops();
+        const body = response && response.data && 'code' in response.data ? response.data : response;
+        return !!body && Number(body.code) === 1000;
+    } catch (e) { return false; }
+}"""
+
+
+def session_alive(page):
+    # 本地存的用户 id 可能是过期的;只有真的查一次批发商列表成功才算登录着。
+    try:
+        uid = page.evaluate("() => { try { return (" + USER_ID + ")(); } catch (e) { return null; } }")
+        return uid is not None and str(uid) != '-1' and bool(page.evaluate(ALIVE))
+    except Exception:
+        return False
+
+
+def wait_for_login(page):
+    # 登录成功时 App 会跳转/重载页面,单次 wait_for_function 会因页面上下文销毁而报错;轮询并容忍跳转。
+    import time
+    while True:
+        require(not page.is_closed(), '友购窗口已关闭，还没登录成功；请重新运行刚才的命令。')
+        if session_alive(page):
+            return
+        time.sleep(2)
+
+
 @contextmanager
 def session(ws, login=False, notify=None):
     try:
@@ -81,16 +113,17 @@ def session(ws, login=False, notify=None):
     context = None
     with sync_playwright() as pw:
         try:
-            context = pw.chromium.launch_persistent_context(str(profile), channel='msedge', headless=not login)
+            # 实测(10-09):友购登录态关掉浏览器再开就失效(接口 401),无界面也不行。
+            # 所以一律开可见窗口:没登录就请用户在这个窗口里登录,登录后在同一个窗口里查完再关。
+            context = pw.chromium.launch_persistent_context(str(profile), channel='msedge', headless=False)
             page = context.pages[0] if context.pages else context.new_page()
             page.goto(URL, wait_until='domcontentloaded', timeout=60000)
             page.wait_for_function(READY, timeout=60000)
-            if login:
-                if notify: notify('请在弹出的窗口里登录友购')
-                page.wait_for_function("() => { const id = (" + USER_ID + ")(); return id != null && String(id) !== '-1'; }", timeout=0)
-            else:
-                uid = page.evaluate(USER_ID)
-                require(uid is not None and str(uid) != '-1', '友购尚未登录；请先运行 python scripts/mlist.py yollgo-login --ws "工作区路径"。')
+            if not session_alive(page):
+                if notify: notify('请在弹出的友购窗口里登录(手机号和密码自己输入);登录后程序会自动接着做,窗口别关。')
+                wait_for_login(page)
+                page.wait_for_timeout(3000)  # 让 App 把登录资料写完
+                require(session_alive(page), '友购登录后查询仍被拒绝;请关掉窗口重新运行,登录后不要切换账号。')
         except Problem:
             if context is not None: context.close()
             raise
@@ -106,4 +139,4 @@ def session(ws, login=False, notify=None):
 
 def login(ws, notify=None):
     with session(ws, login=True, notify=notify):
-        return dict(message='已登录。友购窗口已关闭，后续命令会使用本工作区的登录状态。')
+        return dict(message='已登录。注意:友购关掉窗口后登录会失效,fetch/yollgo-search 会自己弹窗,没登录时在窗口里再登一次即可。')

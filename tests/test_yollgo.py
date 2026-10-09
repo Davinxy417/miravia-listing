@@ -320,10 +320,15 @@ def test_cli_and_browser():
     # close and visible/headless choices without launching any real browser.
     from listing_core.yollgo_browser import session, login
     calls, messages = [], []
+    # 友购关窗后登录失效(10-09 实测):一律开可见窗口,没登录就在同一窗口里等用户登录。
+    user = {'id': -1, 'alive': False, 'closed': False}
     class SessionPage:
         def goto(self, url, **kwargs): assert url == 'https://app.yollgo.com'
         def wait_for_function(self, script, **kwargs): pass
-        def evaluate(self, script): return -1
+        def wait_for_timeout(self, ms): pass
+        def is_closed(self): return user['closed']
+        def evaluate(self, script):
+            return user['alive'] if 'shops()' in script else user['id']
     class FakeContext:
         def __init__(self): self.pages = [SessionPage()]
         def close(self): calls.append('closed')
@@ -337,14 +342,20 @@ def test_cli_and_browser():
             return FakeContext()
     module = SimpleNamespace(sync_playwright=FakePlaywright)
     with patch.dict(sys.modules, {'playwright.sync_api': module}):
-        def not_logged_in():
-            with session(ws):
+        user['closed'] = True  # 用户没登录就关了窗口
+        def closed_before_login():
+            with session(ws, notify=messages.append):
                 raise AssertionError('未登录时不应进入业务层')
-        fails(not_logged_in, '尚未登录', 'yollgo-login')
-        assert calls == [dict(channel='msedge', headless=True), 'closed']
+        fails(closed_before_login, '窗口已关闭', '重新运行')
+        assert calls == [dict(channel='msedge', headless=False), 'closed']
+        assert messages and '登录' in messages[0]
+        calls.clear(); messages.clear()
+        user.update(id='1000436996', alive=True, closed=False)
+        with session(ws, notify=messages.append) as client:
+            assert client.page is not None
+        assert messages == [] and calls == [dict(channel='msedge', headless=False), 'closed']
         calls.clear()
         assert '已登录' in login(ws, notify=messages.append)['message']
-        assert messages == ['请在弹出的窗口里登录友购']
         assert calls == [dict(channel='msedge', headless=False), 'closed']
     import builtins
     actual_import = builtins.__import__
