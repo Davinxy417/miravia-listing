@@ -239,7 +239,13 @@ def publish(ws, batch, shop, yes=False, include_unreviewed=False):
                   files=[{k: v for k, v in i.items() if k != 'source'} for i in items], message=summary)
     if not yes:
         return dict(result, needs_confirm=True, exit_code=2, errors=['请确认发布名单，同意后加 --yes。'])
-    require(items, '没有可发布图片；请补齐成品并用 images-review --ok 审阅，或明确加 --include-unreviewed。')
+    if not items:
+        from .image_readiness import group_issues
+        failures = group_issues(batch)
+        reasons = list(dict.fromkeys(reason for group_reasons in failures.values() for reason in group_reasons))
+        if not reasons:
+            reasons = [f"{row['id']}：{row['reason']}" for row in skipped]
+        raise Problem(['没有可发布图片；请按下面的 id 修复成品并重新审阅，再运行 publish-images。', *reasons])
     for name in ('images.csv', 'image_publish.json'):
         inside(batch, batch / name)
     metadata = json.loads(gh('repo', 'view', host['repo'], '--json', 'isPrivate,nameWithOwner').stdout)

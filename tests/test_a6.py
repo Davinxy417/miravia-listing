@@ -98,7 +98,7 @@ def main():
         assert not any(t in job['prompt'] for t in ('bytes', 'JPG', '3145728', '重试', 'zoom=', 'subtitle', '{}'))
         assert len(re.findall(r'[\u4e00-\u9fff]', job['prompt'])) <= 330
     j04 = jobs[f'T01/{hero}/04']
-    assert '图2人物身份和姿态' in j04['prompt'] and '软管向下通往淋浴龙头' in j04['prompt']
+    assert '图2锁定结构和隔板数量' in j04['prompt'] and '图3人物身份和姿态' in j04['prompt'] and '软管向下通往淋浴龙头' in j04['prompt']
     j07 = jobs[f'T01/{hero}/07']
     people = [r for r in j07['reference_images'] if r['role'] == 'people']
     assert len(people) == 1 and '第1格' in people[0]['use'] and '第3格' in people[0]['use']

@@ -7,7 +7,7 @@ import re
 import unicodedata
 from collections import Counter
 
-from .common import CANDIDATE_FIELDS, CSV_FIELDS, Problem, atomic_bytes, component, inside, read_csv, read_json, require, write_csv, write_json
+from .common import CANDIDATE_FIELDS, SOURCE_NAME_FIELDS, CSV_FIELDS, Problem, atomic_bytes, component, inside, read_csv, read_json, require, write_csv, write_json
 from .pricing import ean_ok
 from .workspace import template_path
 from .yollgo import number, other_candidates, selected_offer
@@ -203,6 +203,7 @@ def build(ws, batch, shop, force=False):
                 warnings.append(f'{gid} / 条码 {code} 的批发商 {sid} 未登记在 shop.json.suppliers，制造商会空；fill 前请补齐。')
             row = dict(group=gid, shop=sid, art_id=str(product['artId']), ean=ean, unit_ean=code,
                        src_name=product.get('namecn') or product.get('namees', ''),
+                       src_name_cn=product.get('namecn', ''), src_name_es=product.get('namees', ''),
                        var1_name=plan['names'][0], var1_value=entry['variant'][0],
                        var2_name=plan['names'][1], var2_value=entry['variant'][1], pack_qty=1,
                        unit_cost_ex_iva=unit, img_hash=product.get('imageHash', ''), **entry['values'],
@@ -232,7 +233,7 @@ def build(ws, batch, shop, force=False):
     # Cost is the WHOLE SKU/pack per A2. Explicit provenance lets price retain
     # A1's per-unit multiplication for legacy batches without guessing by name.
     stream = io.StringIO(newline='')
-    writer = csv.DictWriter(stream, fieldnames=CANDIDATE_FIELDS)
+    writer = csv.DictWriter(stream, fieldnames=CANDIDATE_FIELDS + SOURCE_NAME_FIELDS)
     writer.writeheader()
     writer.writerows(rows)
     payload = stream.getvalue().encode('utf-8-sig')

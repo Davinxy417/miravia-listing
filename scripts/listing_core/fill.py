@@ -164,6 +164,9 @@ def prepare(template, batch, shop, groups=None):
                 seen_skus.add(sku)
         output = []
         for group, variants in sorted(by_group.items()):
+            if len(variants) == 1 and not (variants[0]['var1_name'] and variants[0]['var1_value']):
+                # 米拉维亚单个 SKU 也要 Variation Name 1(实测报 CHK_MANDATORY_PARAM_MISSED)
+                errors.append(f'{group} 只有一个 SKU 也要填 var1_name/var1_value(如 Color / Bambú natural);请在 groups.json 补上后重新 build。')
             if len(variants) > 1:
                 names = {(r['var1_name'], r['var2_name']) for r in variants}
                 if len(names) != 1 or any(not a or a == b for a, b in names):
@@ -190,8 +193,7 @@ def prepare(template, batch, shop, groups=None):
                               original_price=number(row['price'], 'price'), stock=shop['stock_default'],
                               manufacturer=maker['fabricante'], eu=maker['responsable'], hazard='Ninguno')
                 fields.update({f'image{i}': url for i, url in enumerate(gallery, 1)})
-                if len(variants) > 1:
-                    fields.update({key: row[key] for key in ('var1_name', 'var1_value', 'var2_name', 'var2_value')})
+                fields.update({key: row[key] for key in ('var1_name', 'var1_value', 'var2_name', 'var2_value') if row[key]})
                 for key in ('weight_kg', 'len_cm', 'wid_cm', 'hei_cm'):
                     fields[key] = number(row[key], key, integer=key != 'weight_kg')
                 values = [None] * wb['Pantilla'].max_column

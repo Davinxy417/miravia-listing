@@ -11,7 +11,8 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 from .common import Problem, atomic_bytes, component, guard_images, inside, read_csv, read_json, require, write_json
 from .content import number, resolve_content, scene_errors
 from .image_layout import SHARED_SLOTS, SLOTS, hero_variant, output_dir
-from .image_prompts import make_prompt, has_people
+from .image_prompts import make_prompt, has_people, product_aspect
+from .image_background import normalize_white_background, WHITE_BACKGROUND_VERSION
 from .images import read_variantes, variant_key
 from . import overlay
 
@@ -122,6 +123,10 @@ def make_plan(batch, mode='model-text'):
             require(isinstance(scenes, list) and (not scenes or len(scenes) == 4) and all(isinstance(s, str) and s.strip() for s in scenes),
                     f'{group} 的 image_scenes07 应为空或四个场景描述。')
             slots = [*SLOTS, 'variante'] if variant == heroes[group] else ['01', 'variante']
+            principal = output_dir(batch / 'images', group, variant) / SLOTS['01']
+            aspect_source = principal if principal.is_file() else next((batch / 'src' / f"{r['shop']}-{r['art_id']}.jpg"
+                            for r in rows if (batch / 'src' / f"{r['shop']}-{r['art_id']}.jpg").is_file()), None)
+            aspect = product_aspect(aspect_source) if aspect_source else 1.0
             for slot in slots:
                 jid = f'{group}/{variant}/{slot}'
                 output = output_dir(batch / 'images', group, variant) / ('variante.jpg' if slot == 'variante' else SLOTS[slot])
@@ -158,6 +163,15 @@ def make_plan(batch, mode='model-text'):
                         attach(rel(batch, principal), 'product', '锁定当前变体商品外观')
                     root = batch / 'images' / group / variant / 'internal/base'
                     if variant == heroes[group] and not root.is_dir(): root = batch / 'images' / group / 'internal/base'
+                    if slot in ('04', '05', '07', '08'):
+                        # Variant structure always wins; group structure belongs only to its hero.
+                        structure_paths = [batch / 'images' / group / variant / 'internal/base/structure.jpg']
+                        if variant == heroes[group]:
+                            structure_paths.append(batch / 'images' / group / 'internal/base/structure.jpg')
+                        structure_paths += [batch / 'src' / f"{r['shop']}-{r['art_id']}.jpg" for r in rows]
+                        structure = next((p for p in structure_paths if p.is_file()), None)
+                        if structure:
+                            attach(rel(batch, structure), 'structure', '锁定结构和隔板数量')
                     if slot == '07':
                         bases = [root / f'07-{c}.jpg' for c in 'abcd']
                         if all(p.is_file() for p in bases):
@@ -204,7 +218,8 @@ def make_plan(batch, mode='model-text'):
                               'base-overlay' if method in ('model', 'script', 'base-overlay') else mode,
                               scenes=scenes, zoom=cfg.get('zoom', False), note=reason,
                               use_scene=item.get('use_scene', ''), hero_feature=item.get('hero_feature', ''),
-                              references=references, scene_brief=brief)
+                              references=references, scene_brief=brief,
+                              structure_lock=item.get('structure_lock', '') if isinstance(item.get('structure_lock', ''), str) else '', aspect=aspect)
                 jobs.append(dict(id=jid, group=group, variant=variant, slot=slot, output=rel(batch, output),
                                  raw_dir=f'images/{group}/{variant}/internal/raw', raw=rel(batch, raw) if raw else None,
                                  refs=refs, reference_images=references, method=method, mode=mode, source_id=source_id, prompt=prompt,
@@ -229,6 +244,7 @@ def plan(batch, mode='model-text'):
     data = make_plan(batch, mode)
     lines = ['# 出图清单', '', f'模式：{mode}。所有路径相对本批次：{batch}。', '',
              '实际附上所列参考文件；先完成各变体 01，核对结构/原图颜色/数量，再扩展主推款。',
+             '自审逐项数格数、按钮数、件数及隔板位置；对照原图与 structure_lock，数量不符或看不清即重做。',
              '每张最多初次生成＋一次修正；两次仍失败记问题。不要凭空补材质、规格、认证或配件。',
              '带字图只用 prompt 中逐字文字，出完逐字校对；06 只生成无字底图，数字由脚本画。',
              '原始生成图存到本项 raw_dir/<槽位>-v01.png（修正用 v02）；不要直接覆盖成品。',
@@ -329,6 +345,8 @@ def finish(batch, groups=None, only=None):
         # A prompt/reference-role change does not alter already generated raw
         # pixels. Only inputs consumed by finishing may invalidate installation.
         signature = hashlib.sha256((str([digest(p) for p in base_tiles] if base_tiles else digest(source)) + job['method'] + str(cfg) + str(rows)).encode()).hexdigest()
+        if slot in ('01', 'variante'):
+            signature += f':white-{WHITE_BACKGROUND_VERSION}'
         if manifest.get(jid) == {'input': signature, 'output': digest(target)}:
             sync_shared(job, target.read_bytes())
             skipped.append(jid); continue
@@ -351,6 +369,8 @@ def finish(batch, groups=None, only=None):
                     im = overlay.collage(paths, cfg['slots']['07'], overlay.palette(im))
                 else:
                     im = overlay.render(source, slot, cfg, overlay.palette(im), rows)
+            if slot in ('01', 'variante'):
+                im = normalize_white_background(im)
             # Reuse compression and ICC implementation but install atomically with backup.
             stream = io.BytesIO()
             for quality in (94, 90, 85, 80, 75, 65, 50):

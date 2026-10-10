@@ -150,10 +150,14 @@ def finalize(ws, batch, shop, template, max_groups=None, base_url=None):
         result['ledger'] = update_ledger(ws, batch, shop, eligible)
     paths = '\n'.join(outputs)
     result['message'] = ('可以上传；已更新上架台账。上传表：\n' if result['upload_ready'] else '已生成草稿表，还不能上传；请处理下面提醒后重跑 finalize。表在：\n') + paths
-    if max_groups:
+    if max_groups and outputs:
         result['message'] += '\n请按列出的分批表上传；output/miravia_upload.xlsm 是完整备份。'
     if failures:
         result['message'] += '\n以下组只出草稿，未放入上传表：' + '、'.join(sorted(failures)) + '\n草稿：' + '\n'.join(drafts)
+    if not eligible:
+        result['message'] = 'finalize 已完成，但全部组只出草稿，不能上传。草稿：\n' + '\n'.join(drafts)
+        result['message'] += '\n请修复以下图片并重新审阅，然后再次 finalize：\n' + '\n'.join(
+            reason for reasons in failures.values() for reason in reasons)
     write_json(inside(batch, batch / 'finalize_result.json'), dict(
         version=1, eligible_groups=sorted(eligible), draft_groups=failures, draft_outputs=drafts,
         outputs={Path(p).name: digest(p) for p in outputs}, upload_ready=result['upload_ready']))

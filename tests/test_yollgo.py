@@ -13,7 +13,7 @@ import openpyxl
 from PIL import Image
 
 from helpers import FIXTURES, ROOT, cli, csv_rows, json_write, workspace
-from listing_core.common import CANDIDATE_FIELDS, Problem, write_csv
+from listing_core.common import CANDIDATE_FIELDS, SOURCE_NAME_FIELDS, Problem, write_csv
 from listing_core.workspace import load_shop
 from listing_core.yollgo import fetch, read_barcodes, search
 from listing_core.yollgo_browser import BrowserClient
@@ -157,7 +157,7 @@ def test_build():
     result = cli(ws, 'build', '--batch', 'sample')
     assert result['count'] == 6 and result['groups'] == 2
     rows, maps = csv_rows(batch / 'candidates.csv'), csv_rows(batch / 'variantes.csv')
-    assert list(rows[0]) == CANDIDATE_FIELDS
+    assert list(rows[0]) == CANDIDATE_FIELDS + SOURCE_NAME_FIELDS
     assert rows[0]['ean'] == barcode and rows[1]['ean'] == code(barcode[:11] + '2')
     assert rows[1]['unit_ean'] == barcode and maps[1]['variante'] == '130x160-marron'
     assert all(float(row['unit_cost_ex_iva']) == 10 for row in rows[:2])

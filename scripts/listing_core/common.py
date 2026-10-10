@@ -8,6 +8,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 CANDIDATE_FIELDS = 'group,shop,art_id,ean,unit_ean,src_name,var1_name,var1_value,var2_name,var2_value,pack_qty,unit_cost_ex_iva,img_hash,weight_kg,len_cm,wid_cm,hei_cm,market_low,market_high,notes'.split(',')
 PRICE_FIELDS = 'real_cost,ship_est,billable_kg,price,original_price,profit_no_coupon,profit_with_coupon,min_safe_price,max_discount_pct,ean_valid,vs_market'.split(',')
+# Optional provenance columns belong to new builds, not legacy required headers.
+SOURCE_NAME_FIELDS = ['src_name_cn', 'src_name_es']
 CSV_FIELDS = {
     'candidates.csv': CANDIDATE_FIELDS,
     'priced.csv': CANDIDATE_FIELDS + PRICE_FIELDS,
@@ -15,6 +17,12 @@ CSV_FIELDS = {
     'image_files.csv': ['group', 'variante', 'slot', 'local_path'],
     'images.csv': ['group', 'variante', 'slot', 'url'],
 }
+
+
+def source_names(row):
+    """Read both untouched supplier names, with a fallback for old batches."""
+    return list(dict.fromkeys(str(row.get(key) or '') for key in
+                (*SOURCE_NAME_FIELDS, 'src_name') if row.get(key)))
 
 
 class Problem(ValueError):

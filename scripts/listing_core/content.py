@@ -5,7 +5,7 @@ from decimal import Decimal, InvalidOperation
 from .common import Problem, require
 
 INHERITED = ('category', 'gpsr_name', 'gpsr_safety', 'sku_include_ean', 'gpsr_measure_suffix',
-             'image_description', 'image_scenes07', 'use_scene', 'hero_feature', 'scene_briefs', 'description_images')
+             'image_description', 'structure_lock', 'image_scenes07', 'use_scene', 'hero_feature', 'scene_briefs', 'description_images')
 
 
 def resolve_content(raw, groups):
@@ -47,6 +47,8 @@ def seller_sku(row, shop, item):
 def scene_errors(group, item):
     """检查出图事实；规划时作为组级 blocker，check 时作为文案错误。"""
     errors = []
+    if 'structure_lock' in item and (not isinstance(item['structure_lock'], str) or not item['structure_lock'].strip()):
+        errors.append(f'{group} 的 structure_lock 应为非空中文结构说明；请写清格数、按钮数或件数。')
     for key in ('use_scene', 'hero_feature'):
         if not isinstance(item.get(key), str) or not item[key].strip():
             errors.append(f'{group} 缺非空 {key}；请在 content.json 补齐中文出图事实。')

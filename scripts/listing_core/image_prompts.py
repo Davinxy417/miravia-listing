@@ -1,5 +1,34 @@
 """只给模型本图需要的视觉指令；路径、预算、导出规格留在程序。"""
 import re
+from PIL import Image, ImageChops, ImageOps
+
+
+def product_aspect(path):
+    """Estimate the visible product bounds, ignoring near-white hero margins."""
+    with Image.open(path) as source:
+        im = ImageOps.exif_transpose(source).convert('RGB')
+        im.thumbnail((400, 400))
+        diff = ImageChops.difference(im, Image.new('RGB', im.size, 'white'))
+        red, green, blue = diff.split()
+        mask = ImageChops.lighter(ImageChops.lighter(red, green), blue).point(lambda p: 255 if p > 35 else 0)
+        box = mask.getbbox() or (0, 0, im.width, im.height)
+        return (box[2] - box[0]) / (box[3] - box[1])
+
+
+def points_layout(aspect=1.0):
+    """Both fitted dimensions stay inside one safe product region."""
+    wide = aspect >= 1.2
+    box = (0.05, 0.42, 0.90, 0.53) if wide else (0.42, 0.20, 0.53, 0.75)
+    width = min(box[2], box[3] * aspect)
+    return dict(layout='horizontal' if wide else 'vertical', box=box,
+                width=width, height=width / aspect)
+
+
+def points_frame(qty, aspect):
+    layout = points_layout(aspect)
+    region = '上方横排图标，下方整宽商品区' if layout['layout'] == 'horizontal' else '左侧纵排图标，右侧商品区'
+    return (f'{region}；{qty}件等比完整放入，组合宽≤{layout["width"]:.0%}、高≤{layout["height"]:.0%}，'
+            '不拉伸、不裁边，四角完整，四周≥5%安全边距；浅底侧光，关键部件清晰。')
 
 
 def has_people(scene):
@@ -11,7 +40,8 @@ def has_people(scene):
 
 
 def make_prompt(slot, description, variant, qty, entry, mode, scenes=(), zoom=False,
-                note='', use_scene='', hero_feature='', references=(), scene_brief=None):
+                note='', use_scene='', hero_feature='', references=(), scene_brief=None,
+                structure_lock='', aspect=1.0):
     goals = {
         '01': '生成一张1:1白底电商主图。',
         '02': f'生成一张1:1卖点图，第一眼突出{hero_feature}。' if hero_feature else '生成一张1:1卖点图。',
@@ -25,6 +55,7 @@ def make_prompt(slot, description, variant, qty, entry, mode, scenes=(), zoom=Fa
     parts = [goals[slot]]
     if roles: parts.append('参考图用途：' + roles + '。')
     parts.append(f'商品：{description}；当前变体{variant}，颜色与结构按当前变体附件。')
+    if structure_lock: parts.append('结构锁定：' + structure_lock.strip() + '。数量和隔板位置不变。')
     scene = scene_brief or {}
     if slot in ('04', '05', '08'):
         if note:
@@ -36,7 +67,7 @@ def make_prompt(slot, description, variant, qty, entry, mode, scenes=(), zoom=Fa
         parts.append('允许必要环境连接，道具不作赠品；接触与作用方向一致。')
     frames = {
         '01': f'纯白#FFFFFF，{qty}件裸商品完整分开可数，居中最长边占80%～85%；轻微侧角、柔和棚拍光与薄接触阴影。去外包装与叠加广告，保留本体印刷。只展示确认随货内容。',
-        '02': f'{qty}件完整置于右侧55%版面，最长边约75%，浅底柔和侧光，关键部件清晰；左侧35%纵排线条图标，四周留5%安全边距。',
+        '02': points_frame(qty, aspect),
         '03': '关键部件占60%，保留相邻结构定位；斜侧近摄、柔和侧光、背景微虚，允许局部出画。不虚构不可见内部、剖面或彩色颗粒。',
         '04': '斜侧近景，商品最长边约55%，靠近镜头取景，保持真实尺度与柔和环境光。',
         '05': '中近景，商品完整可辨、最长边35%～50%，保持真实尺度，焦点落在商品和作用处。',

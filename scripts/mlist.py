@@ -126,8 +126,9 @@ def dispatch(args):
     if cmd == 'yollgo-search':
         from listing_core.yollgo_browser import session
         from listing_core.yollgo import search
+        root = batch_path(ws, args.batch) if getattr(args, 'batch', None) else ws
         with session(ws, notify=_tell, unattended=args.auto) as client:
-            return search(client, args.shop, args.keyword)
+            return search(client, args.shop, args.keyword, root=root)
     if cmd == 'keywords':
         from listing_core.keywords import suggest
         return suggest(args.seeds)
@@ -260,6 +261,10 @@ def main(argv=None):
             for category in output.get('categories', []): print(category)
             for product in output.get('products', []):
                 print(f"{product['barcode']}  {product['name']}  €{product['price']}")
+                print(f"货号：{product['usercode']}；西语原名：{product['namees']}")
+                if product.get('image_path'): print('原图：' + product['image_path'])
+                elif product.get('image_url'): print('原图网址：' + product['image_url'])
+            if output.get('sheet'): print('候选总览：' + output['sheet'])
             if 'steps' in output:
                 labels = dict(barcodes='条码清单', candidates='候选商品', pricing='定价', content='文案', image_files='本地图片清单', images='图片网址', output='上传表', image_directory='图片目录')
                 for stage, state in output['steps'].items():
