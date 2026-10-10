@@ -33,6 +33,16 @@ def main():
     cli(ws,'import-legacy','--from',LEGACY,'--batch','legacy')
     result=cli(ws,'price','--batch','legacy')
     print(f"price：{result['count']} 行；{len(result['warnings'])} 条提醒")
+    # Only enrich the temporary imported copy with synthetic image-test facts.
+    # They never enter workbook cells or alter the read-only legacy baseline.
+    from helpers import FIXTURES, json_write
+    content_path = ws / 'batches/legacy/content.json'
+    content = json.loads(content_path.read_text('utf-8-sig'))
+    fixture = json.loads((FIXTURES / 'batch/content.json').read_text('utf-8-sig'))['T01']
+    for item in content.values():
+        for key in ('use_scene', 'hero_feature', 'scene_briefs'):
+            item[key] = fixture[key]
+    json_write(content_path, content)
     result=cli(ws,'fill','--batch','legacy')
     print(f"fill：{result['count']} SKU / {result['groups']} 组；{len(result['warnings'])} 条提醒")
     batch=ws/'batches/legacy'

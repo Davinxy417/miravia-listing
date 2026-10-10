@@ -12,6 +12,7 @@ from PIL import Image
 
 from .common import Problem, atomic_bytes, guard_images, inside, read_json, require, write_json
 from .image_workflow import make_plan, plan_mode, read_path, select
+from .preflight import run as preflight
 
 ENDPOINT = 'https://ark.ap-southeast.bytepluses.com/api/v3/images/generations'
 MODEL = 'dola-seedream-5-0-pro-260628'
@@ -123,45 +124,45 @@ def run(batch, only=None, all_missing=False, yes=False, client=None, key_reader=
                     errors=['尚未出图；确认张数和预计单位后，原命令加 --yes 才会调用付费接口。'])
     guard_images(batch)
     if not jobs: return dict(result, needs_confirm=False, message='没有需要调用 Seedream 的图片。')
-    issues = []
     inside(batch, log_path)
-    requested_jobs = jobs
-    if auto:
-        # Preflight only the affordable jobs; an expensive job cannot prevent
-        # a later cheaper job or independent B group from proceeding.
-        admitted, projected, denied = [], dict(group_spent), []
-        total = spent
-        for j in jobs:
-            group, cost = j['id'].split('/')[0], job_units(j)
-            if (projected.get(group, Decimal(0)) + cost > Decimal(str(budget['budget_units_per_group']))
-                    or total + cost > Decimal(str(budget['budget_units_per_batch']))):
-                denied.append(j['id'])
-                continue
-            admitted.append(j)
-            projected[group] = projected.get(group, Decimal(0)) + cost
-            total += cost
-        jobs = admitted
-        if not jobs:
-            result['over_budget'] = denied
-            log['over_budget'] = list(dict.fromkeys(log.get('over_budget', []) + denied))
-            write_json(log_path, log)
-            return dict(result, needs_confirm=False, produced=[], errors=[], message='本次图片超出预算，已跳过；没有调用 Seedream。')
+    # Skip unaffordable work before any key access; cost admission is repeated
+    # after each actual attempt, so blockers never reserve another job's budget.
+    affordable = [j for j in jobs if
+                  group_spent.get(j['group'], Decimal(0)) + job_units(j) <= Decimal(str(budget['budget_units_per_group']))
+                  and spent + job_units(j) <= Decimal(str(budget['budget_units_per_batch']))]
+    if not affordable:
+        result['over_budget'] = [j['id'] for j in jobs]
+        log['over_budget'] = list(dict.fromkeys(log.get('over_budget', []) + result['over_budget']))
+        write_json(log_path, log)
+        return dict(result, needs_confirm=False, produced=[], errors=[], message='本次图片超出预算，已跳过；没有调用 Seedream。')
+    from .workspace import load_shop
+    ws = batch.parent.parent
+    readiness = preflight(ws, batch, shop or load_shop(ws))
+    result['preflight'] = readiness
+    if readiness['account_blockers']:
+        return dict(result, needs_confirm=False, produced=[], errors=readiness['account_blockers'])
+    admitted, blocked = [], []
     for j in jobs:
-        if len(log.get(j['id'], [])) >= 2: issues.append(j['id'] + ' 已尝试两次；请补素材并人工处理，不再自动扣费。')
-        issues += [j['id'] + '：' + b for b in j['blockers']]
+        issues = list(j['blockers']) + readiness['group_blockers'].get(j['group'], [])
+        if len(log.get(j['id'], [])) >= 2: issues.append('已尝试两次；请补素材并人工处理，不再自动扣费。')
         for ref in j['refs']:
-            if not read_path(batch, ref).is_file(): issues.append(j['id'] + ' 缺参考图 ' + ref)
-        require(len(j['refs']) <= 10, j['id'] + ' 参考图超过接口上限 10 张；请减少素材。')
-    if issues: return dict(result, needs_confirm=False, produced=[], errors=issues)
+            if not read_path(batch, ref).is_file(): issues.append('缺参考图 ' + ref)
+        if len(j['refs']) > 10: issues.append('参考图超过接口上限 10 张；请减少素材。')
+        if issues:
+            blocked.append(dict(id=j['id'], reasons=issues)); skipped.append(j['id'])
+        else: admitted.append(j)
+    result['blocked'] = blocked
+    blocked_errors = [b['id'] + '：' + '；'.join(b['reasons']) for b in blocked]
+    if not admitted: return dict(result, needs_confirm=False, produced=[], errors=blocked_errors)
     try: key = (key_reader or api_key)()
     except Problem as exc:
         return dict(result, needs_confirm=False, produced=[], errors=exc.errors)
     client = client or generate
     produced, errors = [], []
-    for j in requested_jobs:
+    for j in admitted:
         group, cost = j['id'].split('/')[0], job_units(j)
-        if auto and (group_spent.get(group, Decimal(0)) + cost > Decimal(str(budget['budget_units_per_group']))
-                     or spent + cost > Decimal(str(budget['budget_units_per_batch']))):
+        if (group_spent.get(group, Decimal(0)) + cost > Decimal(str(budget['budget_units_per_group']))
+                or spent + cost > Decimal(str(budget['budget_units_per_batch']))):
             result['over_budget'].append(j['id'])
             log['over_budget'] = list(dict.fromkeys(log.get('over_budget', []) + [j['id']]))
             write_json(log_path, log)
@@ -191,5 +192,5 @@ def run(batch, only=None, all_missing=False, yes=False, client=None, key_reader=
         write_json(log_path, log)
         if errors: break  # A network/permission failure must not consume the whole batch.
     result['spent_units'] = float(spending(log)[0])
-    return dict(result, needs_confirm=False, produced=produced, errors=errors,
+    return dict(result, needs_confirm=False, produced=produced, errors=errors + blocked_errors,
                 message=f'原始图已保存 {len(produced)} 张；请跑 images-finish，再逐字校对并审阅。')

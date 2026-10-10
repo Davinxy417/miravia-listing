@@ -50,7 +50,7 @@ def test_auto_budget():
     config = read_json(ws / 'shop.json')
     config['auto'] = dict(shop['auto'], max_groups_per_file=10)
     json_write(ws / 'shop.json', config)
-    with patch.object(seedream, 'make_plan', return_value=dict(jobs=jobs)):
+    with patch.object(seedream, 'make_plan', return_value=dict(jobs=jobs)), patch.object(seedream, 'preflight', return_value=dict(account_blockers=[], group_blockers={})):
         result = seedream.run(batch, all_missing=True, auto=True, shop=shop, client=lambda *a: fake_image(), key_reader=lambda: 'fake')
         assert result['produced'] == ['G01/crema/02', 'G01B/crema/01'], result
         assert result['over_budget'] == ['G01/crema/01', 'G03/crema/01'] and result['spent_units'] == 4.58
@@ -73,7 +73,7 @@ def test_auto_budget():
     (batch / 'seedream_log.json').unlink()
     jobs = [job('G01/crema/01', 2), job('G02/crema/01')]
     json_write(batch / 'image_plan.json', dict(jobs=jobs))
-    with patch.object(seedream, 'make_plan', return_value=dict(jobs=jobs)):
+    with patch.object(seedream, 'make_plan', return_value=dict(jobs=jobs)), patch.object(seedream, 'preflight', return_value=dict(account_blockers=[], group_blockers={})):
         calls = []
         def failure(*args):
             calls.append(1); raise TimeoutError('offline')
@@ -87,6 +87,8 @@ def test_auto_budget():
 
 def main():
     test_auto_budget()
+    from test_a6 import main as test_a6
+    test_a6()
     ws = workspace('images-')
     cli(ws, 'init'); cli(ws, 'new-batch', 'sample')
     batch = ws / 'batches/sample'
@@ -126,7 +128,7 @@ def main():
         code, result=captured(ws,'seedream','--only',copied)
         assert code==2 and result['count']==0 and result['estimated_units']==0
     assert not (batch / 'seedream_log.json').exists()
-    with patch.object(seedream, 'api_key', side_effect=Problem('ARK_API_KEY 没设置；请在 Windows 用户环境变量中新增。')):
+    with patch.object(seedream, 'preflight', return_value=dict(account_blockers=[], group_blockers={})), patch.object(seedream, 'api_key', side_effect=Problem('ARK_API_KEY 没设置；请在 Windows 用户环境变量中新增。')):
         code, result = captured(ws, 'seedream', '--only', jid, '--yes')
         assert code==1 and 'ARK_API_KEY' in result['errors'][0] and '环境变量' in result['errors'][0]
     with patch.dict(os.environ, {'ARK_API_KEY': ''}), patch('sys.platform', 'linux'):
@@ -135,7 +137,7 @@ def main():
     calls = []
     def fake(prompt, refs, key):
         calls.append((prompt, refs)); return fake_image()
-    with patch.object(seedream, 'api_key', return_value='仅用于测试'), patch.object(seedream, 'generate', side_effect=fake):
+    with patch.object(seedream, 'preflight', return_value=dict(account_blockers=[], group_blockers={})), patch.object(seedream, 'api_key', return_value='仅用于测试'), patch.object(seedream, 'generate', side_effect=fake):
         code, result = captured(ws, 'seedream', '--only', jid, '--yes')
         assert code==0 and result['produced']==[jid] and len(calls)==1
     assert '仅用于测试' not in (batch / 'seedream_log.json').read_text('utf-8')
@@ -201,10 +203,10 @@ def main():
     cli(ws,'images-review','--batch','sample','--redo',jid,'--note','测试重做')
     cli(ws,'images-plan','--batch','sample')
     secret = 'fake-sensitive-value'
-    with patch.object(seedream,'api_key',return_value=secret), patch.object(seedream,'generate',side_effect=RuntimeError(secret)):
+    with patch.object(seedream, 'preflight', return_value=dict(account_blockers=[], group_blockers={})), patch.object(seedream,'api_key',return_value=secret), patch.object(seedream,'generate',side_effect=RuntimeError(secret)):
         code, result = captured(ws,'seedream','--only',jid,'--yes')
         assert code==1 and secret not in json.dumps(result)
-    with patch.object(seedream,'api_key',side_effect=AssertionError('预算耗尽不读 Key')):
+    with patch.object(seedream, 'preflight', return_value=dict(account_blockers=[], group_blockers={})), patch.object(seedream,'api_key',side_effect=AssertionError('预算耗尽不读 Key')):
         code, result = captured(ws,'seedream','--only',jid,'--yes')
         assert code==1 and '两次' in str(result)
     # Imported junction allows plans/sheets/reviews in root, denies all image writers.

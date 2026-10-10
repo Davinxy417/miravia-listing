@@ -12,7 +12,35 @@
       "Mantener lejos de llamas y fuentes de calor directo.",
       "Guardar completamente seca."
     ],
-    "sku_include_ean": true
+    "sku_include_ean": true,
+    "use_scene": "毯子铺在沙发或床上，覆盖接触面，呈现平整柔软的休息空间",
+    "hero_feature": "短绒表面的柔软纹理",
+    "scene_briefs": {
+      "04": {
+        "location": "客厅沙发",
+        "action": "手把毯子展开铺平",
+        "connections": "毯子贴合沙发坐垫",
+        "visible_result": "坐垫被完整覆盖"
+      },
+      "05": {
+        "location": "卧室床尾，无人物",
+        "action": "毯子展开平铺",
+        "connections": "毯子贴合床面",
+        "visible_result": "床尾平整整洁"
+      },
+      "08": {
+        "location": "客厅沙发",
+        "action": "人物坐在沙发上用毯子盖腿",
+        "connections": "毯子自然搭在双腿上",
+        "visible_result": "人物放松休息"
+      }
+    },
+    "description_images": [
+      "08",
+      "03",
+      "04",
+      "07"
+    ]
   },
   "T01B": {
     "title": "Pack de 2 mantas suaves para sofá y cama en colores azul o gris",
@@ -34,6 +62,34 @@
       "Mantener lejos de llamas y fuentes de calor directo.",
       "Guardar completamente seca."
     ],
-    "sku_include_ean": true
+    "sku_include_ean": true,
+    "use_scene": "毯子铺在沙发或床上，覆盖接触面，呈现平整柔软的休息空间",
+    "hero_feature": "短绒表面的柔软纹理",
+    "scene_briefs": {
+      "04": {
+        "location": "客厅沙发",
+        "action": "手把毯子展开铺平",
+        "connections": "毯子贴合沙发坐垫",
+        "visible_result": "坐垫被完整覆盖"
+      },
+      "05": {
+        "location": "卧室床尾，无人物",
+        "action": "毯子展开平铺",
+        "connections": "毯子贴合床面",
+        "visible_result": "床尾平整整洁"
+      },
+      "08": {
+        "location": "客厅沙发",
+        "action": "人物坐在沙发上用毯子盖腿",
+        "connections": "毯子自然搭在双腿上",
+        "visible_result": "人物放松休息"
+      }
+    },
+    "description_images": [
+      "08",
+      "03",
+      "04",
+      "07"
+    ]
   }
 }

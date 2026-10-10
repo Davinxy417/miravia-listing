@@ -29,7 +29,7 @@ def suggest(seeds, opener=urllib.request.urlopen):
         for name, (template, parse) in SOURCES.items():
             try: per[name] = fetch(template.format(q=urllib.parse.quote(seed)), parse, opener)
             except Exception: per[name] = []; failed.add(name)
-        # 两边都出现的词排前面:这是最多人搜的说法
+        # 两边都出现的说法优先；联想交集不能推导搜索量。
         both = [w for w in per['amazon_es'] if w in per['google_es']]
         per['merged'] = list(dict.fromkeys(both + per['amazon_es'] + per['google_es']))
         result[seed] = per

@@ -34,6 +34,7 @@ def parser():
         'price': '按 shop.json 对 candidates.csv 定价，生成 priced.csv',
         'fill': '检查后填入官方模板，生成 output/miravia_upload.xlsm',
         'check': '只检查不写文件，汇总文案、条码、下拉、图片和制造商问题',
+        'preflight': '付费前只读检查模板、供应商、图床、Key 是否设置及预算余额',
         'status': '查看批次文件是否齐全，以及价格和输出是否需要更新',
         'categories': '搜索模板类目下拉，返回完整类目原文',
         'gpsr': '读取店铺与商品资料，生成 GPSR 标签 PNG 和 A4 PDF',
@@ -90,11 +91,14 @@ def parser():
     commands['images-review'].add_argument('--ok', nargs='+', help='通过的完整 id，可多张')
     commands['images-review'].add_argument('--redo', nargs='+', help='需重做的完整 id')
     commands['images-review'].add_argument('--note', default='', help='重做原因，标记重做时必填')
+    commands['images-review'].add_argument('--checks', nargs='+', help='已检查项目，可多项，如 原尺寸 320px缩略图 文字')
+    commands['images-review'].add_argument('--evidence', help='可见证据：主卖点或动作、连接、结果在哪里')
+    commands['images-review'].add_argument('--severity', choices=('minor', 'major', 'critical'), help='轻微/硬伤/严重硬伤；后两项不能 --ok')
     commands['image-host-setup'].add_argument('--repo', required=True, metavar='账号/仓库名', help='填仓库名或账号/仓库名；已有公开仓库直接用，不覆盖旧内容')
     commands['image-host-setup'].add_argument('--branch', default='main', help='图床分支，默认 main；已有其他分支时可指定')
     commands['image-host-setup'].add_argument('--yes', action='store_true', help='确认公开操作；不加仅说明计划并退出 2')
     commands['publish-images'].add_argument('--yes', action='store_true', help='确认推送；不加仅列张数、总大小、目标和跳过图片，退出 2')
-    commands['publish-images'].add_argument('--include-unreviewed', action='store_true', help='明确允许发布没审过、图片变化或要求重做的现有成品；仍须 --yes')
+    commands['publish-images'].add_argument('--include-unreviewed', action='store_true', help='允许未审或图片变化的成品；失败组仍禁止发布，仍须 --yes')
     commands['finalize'].add_argument('--max-groups', type=int, metavar='N', help='每份最多 N 个链接；主组和 B 组不拆开，它们各占一个链接')
     commands['finalize'].add_argument('--base-url', metavar='网址前缀', help='可选：为手动托管图片生成网址；GitHub 发布后无需填写，不联网不推送')
     return p
@@ -135,6 +139,9 @@ def dispatch(args):
         finally: wb.close()
         return dict(categories=values, count=len(values))
     batch = batch_path(ws, getattr(args, 'batch', None))
+    if cmd == 'preflight':
+        from listing_core.preflight import run
+        return run(ws, batch, shop)
     if cmd == 'report':
         from listing_core.report import run
         return run(ws, batch, shop, template_path(ws, shop, False))
@@ -157,7 +164,7 @@ def dispatch(args):
         if cmd == 'images-plan': return iw.plan(batch, args.mode)
         if cmd == 'images-finish': return iw.finish(batch, args.group, args.only)
         if cmd == 'images-sheet': return iw.sheet(batch, args.name, args.group, args.only, args.pending)
-        return iw.review(batch, args.ok, args.redo, args.note)
+        return iw.review(batch, args.ok, args.redo, args.note, args.checks, args.evidence, args.severity)
     if cmd == 'seedream':
         from listing_core.seedream import run
         return run(batch, args.only, args.all_missing, args.yes, auto=args.auto, shop=shop)
@@ -261,7 +268,8 @@ def main(argv=None):
                     print(f'{labels[stage]}：{status}')
                     if 'error' in state: print(state['error'])
         for item in output.get('files', []): print(f"拟发布：{item['id']} → {item['path']}")
-        for item in output.get('skipped', []): print(f"跳过：{item['id']}（{item['reason']}）")
+        for item in output.get('skipped', []):
+            print(f"跳过：{item['id']}（{item['reason']}）" if isinstance(item, dict) else f'跳过：{item}')
         for warning in warnings: print(f'提醒：{warning}')
         for error in errors: print(f'错误：{error}')
     return exit_code

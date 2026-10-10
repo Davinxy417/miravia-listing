@@ -1,10 +1,13 @@
 """离线早晨报告；不填表、不改台账、不联网。"""
+from pathlib import Path
 from .common import Problem, atomic_bytes, inside, read_csv, read_json
 from .status import run as status
 from .fill import run as check
 from .finalize import publication_warnings
 from .seedream import spending
 from .content import resolve_content, seller_sku
+from .image_readiness import group_issues
+from .image_workflow import digest
 
 
 def cell(value):
@@ -45,6 +48,21 @@ def run(ws, batch, shop, template):
         todos.append('部分分表比完整表旧；请重跑 finalize --max-groups。')
         outputs = [str(p) for p in splits]
     if not outputs and full.is_file(): outputs = [str(full)]
+    finalized = optional('finalize_result.json', read_json, {})
+    draft_groups, draft_outputs, eligible = {}, [], None
+    if (batch / 'variantes.csv').is_file():
+        try: draft_groups = group_issues(batch, require_complete=True)
+        except (ValueError, OSError) as exc: todos.append(str(exc))
+    if finalized:
+        eligible = set(finalized.get('eligible_groups', []))
+        draft_outputs = finalized.get('draft_outputs', [])
+        outputs = [str(inside(batch, batch / 'output' / name)) for name in finalized.get('outputs', {})]
+        if any(digest(p) != finalized['outputs'][Path(p).name] for p in outputs):
+            todos.append('上传表与收尾记录不一致；请重新 finalize。')
+        current = {r['group'] for r in rows} - draft_groups.keys()
+        if eligible != current: todos.append('可上传组发生变化；请重新 finalize 隔离失败组。')
+    elif draft_groups:
+        todos.append('存在失败或缺图的组；请重新 finalize，隔离草稿与上传表。')
     ready = False
     if not outputs:
         todos.append('上传表没做到这一步；请先 finalize。')
@@ -53,9 +71,9 @@ def run(ws, batch, shop, template):
                      else '上传表需要更新；请重跑 finalize。')
     else:
         try:
-            checked = check(template, batch, shop, check=True)
+            checked = check(template, batch, shop, check=True, groups=eligible)
             todos.extend(checked['warnings'])
-            todos.extend(publication_warnings(batch, shop))
+            todos.extend(publication_warnings(batch, shop, eligible))
             ready = checked['upload_ready'] and not todos
         except (ValueError, OSError) as exc:
             todos.extend(exc.errors + exc.warnings if isinstance(exc, Problem) else [str(exc)])
@@ -75,6 +93,10 @@ def run(ws, batch, shop, template):
     review = state['image_review']
     lines = ['# 早上看这里', '', '可以上传。' if ready else '还不能上传，请先处理下面的待办。', '', '## 上传表', '']
     lines += [f'共 {len(outputs)} 份，只上传下面列出的表。', *[f'- {p}' for p in outputs]] if outputs else ['没做到这一步。']
+    if draft_groups:
+        lines += ['', '## 仅草稿的组（不能上传）', '']
+        lines += [f'- {g}：' + '；'.join(reasons) for g, reasons in draft_groups.items()]
+        lines += [f'- 草稿：{p}' for p in draft_outputs]
     lines += ['', f'链接 {len({r["group"] for r in rows})} 个，SKU {len(rows)} 个。', '', '## 售价和每单利润', '']
     if prices:
         lines += ['| 链接 | SKU | 售价（€） | 每单利润（€） |', '|---|---|---:|---:|']
@@ -100,7 +122,8 @@ def run(ws, batch, shop, template):
     text = '\n'.join(lines) + '\n' + (notes if notes is not None else '没做到这一步。\n')
     target = inside(batch, batch / '早上看这里.md')
     atomic_bytes(target, text.encode('utf-8'))
-    return dict(upload_ready=ready, outputs=outputs, groups=len({r['group'] for r in rows}), count=len(rows),
+    return dict(upload_ready=ready, outputs=outputs, draft_groups=draft_groups, draft_outputs=draft_outputs,
+                groups=len({r['group'] for r in rows}), count=len(rows),
                 prices=prices, spent_units=float(spent), group_units={g: float(v) for g, v in groups.items()},
                 over_budget=over_budget, image_review=review, image_problems=problems, todos=list(dict.fromkeys(todos)),
                 notes=notes, output=str(target), message='早晨报告已生成。' + ('可以上传。' if ready else '还不能上传，请查看报告里的待办。'))

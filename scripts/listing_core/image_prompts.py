@@ -1,47 +1,72 @@
-"""便携的出图骨架；商品事实和文字只来自当前批次。"""
-import json
-
-SLOT_PROMPTS = {
-    '01': '白底主图，纯白 #FFFFFF，裸产品完整入镜，视觉居中，占画面约 70–85%，柔和接触阴影。去外部销售包装，保留产品本体标签。不得新增文字、数字、角标。每件可计数。',
-    '02': '卖点设计图，浅色干净背景，商品放右下且完整清楚，占画面一半以上。左侧 3–4 个浅色圆底线条图标，配给定的短说明。',
-    '03': '新构图的商业摄影细节特写，重新安排近摄镜头、侧光和景深；按真实部件表现材质，不用裁剪放大冒充新照片。zoom=true 才加一个白边圆形放大圈，依据微距参考；其他位置不加。',
-    '04': '真实使用场景，只露手和少量手臂，合理操作当前商品。产品与环境一起生成，透视、尺度、光向、接触或安装一致，商品清楚突出。',
-    '05': '不同于 04 的使用场景，半身、肩膀以下或背影，不露脸。商品清楚，完整入镜，正常人体比例。',
-    '06': '尺寸/内容的无字底图，纯白或极浅纯色背景，正面或完全平铺展开，四周留 15% 标注空间。比例依据已核实数据。不要新增任何文字、数字或尺寸线；数字和箭头一律后续由脚本画。',
-    '07': '用途拼图，按给定四个场景顺序做 2×2 或 1+3，细白格线，每格都有清楚的同款商品，每格标签只用给定场景名。',
-    '08': '正脸模特场景，自然微笑，正常人体比例。选择好看、自然的西班牙/欧洲居家风真人素材，保留来源人物身份和脸，商品清楚突出。',
-}
+"""只给模型本图需要的视觉指令；路径、预算、导出规格留在程序。"""
+import re
 
 
-def make_prompt(slot, description, variant, qty, entry, mode, scenes=(), zoom=False, note='', use_scene='', hero_feature=''):
-    text = [entry.get('title', ''), entry.get('subtitle', '')]
-    text += [p['text'] for p in entry.get('points', [])]
-    text += [s['title'] for s in entry.get('scenes', [])]
-    text = [s for s in text if s]
-    count = f'每格严格正好 {qty} 件' if slot == '07' else f'画面严格正好 {qty} 件'
-    lead = (f'一张独立 1:1 方图。当前商品：{description}。变体：{variant}。'
-            f'{count}，型号、颜色、图案、结构按实际附件如实还原，不美化颜色，不过饱和。'
-            '外观描述可能是主推款的摘要，当前变体附件及已确认变体值优先，不把其他颜色套到本款。'
-            '不画认证标志，不新增参考图里没有的配件。去掉参考图上叠加的中文、价格、水印；'
-            '产品自带印刷保留原貌，不重绘假二维码。场景道具不暗示随货赠送。')
-    body = SLOT_PROMPTS[slot] + f' 放大圈开关 zoom={str(zoom).lower()}。'
-    if hero_feature and slot in ('02', '03'):
-        body += f' 这张图的重点：{hero_feature}。要让买家一眼看到这个卖点。'
-    if use_scene and slot in ('04', '05', '07', '08'):
-        body += (f' 商品真实用法：{use_scene}。场景必须合乎常识：该连的管线连着、该装的地方装着、在该用的位置使用，'
-                 '不要把商品拿到不相干的地方摆拍(例如花洒不能离开软管、出现在镜子或洗手台前)。')
-    if slot == '02':
-        body += ' 图标和对应文字：' + json.dumps(entry.get('points', []), ensure_ascii=False)
-    if slot == '07':
-        body += f" 布局：{entry.get('layout', '2x2')}。四格场景（空时按实际附上的四张场景底图顺序）：" + json.dumps(scenes, ensure_ascii=False)
+def has_people(scene):
+    text = '；'.join(str(v) for v in scene.values()) if isinstance(scene, dict) else str(scene)
+    text = re.sub(r'不露脸|不露正脸|不遮人物|无人物遮挡|手柄|扶手椅|手持式', '', text)
+    if re.search(r'无人|不出现人物|无人物|不含人物', text):
+        return False
+    return bool(re.search(r'人物|模特|真人|手|臂|肩|背影|人站|坐|躺|洗澡|淋浴的人|冲洗身体|冲洗头发|宠物主人|脸', text))
+
+
+def make_prompt(slot, description, variant, qty, entry, mode, scenes=(), zoom=False,
+                note='', use_scene='', hero_feature='', references=(), scene_brief=None):
+    goals = {
+        '01': '生成一张1:1白底电商主图。',
+        '02': f'生成一张1:1卖点图，第一眼突出{hero_feature}。' if hero_feature else '生成一张1:1卖点图。',
+        '03': f'生成一张1:1部件特写，拍清{hero_feature}。' if hero_feature else '生成一张1:1商品部件特写。',
+        '04': '生成一张1:1真实操作近景。', '05': '生成一张1:1生活使用图。',
+        '06': '生成一张1:1尺寸说明用无字底图。',
+        '07': f"生成一张1:1的{entry.get('layout', '2x2')}四格用途图，细白线分隔。",
+        '08': '生成一张1:1生活结果图。',
+    }
+    roles = '；'.join(f'图{i}{r["use"]}' for i, r in enumerate(references, 1))
+    parts = [goals[slot]]
+    if roles: parts.append('参考图用途：' + roles + '。')
+    parts.append(f'商品：{description}；当前变体{variant}，颜色与结构按当前变体附件。')
+    scene = scene_brief or {}
     if slot in ('04', '05', '08'):
-        body += (' 实际附上 Pexels/Unsplash 真人素材和商品主图；保持人物、脸和房间，'
-                 '只自然替换/放入商品；来源记入批次 stock_fotos.csv。无素材时记录限制，不宣称真人实拍。')
+        if note:
+            # Replace the old scene and camera direction, not a contradictory tail.
+            parts.append('本次场景与取景改为：' + note.strip() + '。')
+        else:
+            labels = {'location': '地点', 'action': '动作', 'connections': '连接', 'visible_result': '结果'}
+            parts.extend(f'{label}：{scene[k]}。' for k, label in labels.items() if scene.get(k))
+        parts.append('允许必要环境连接，道具不作赠品；接触与作用方向一致。')
+    frames = {
+        '01': f'纯白#FFFFFF，{qty}件裸商品完整分开可数，居中最长边占80%～85%；轻微侧角、柔和棚拍光与薄接触阴影。去外包装与叠加广告，保留本体印刷。只展示确认随货内容。',
+        '02': f'{qty}件完整置于右侧55%版面，最长边约75%，浅底柔和侧光，关键部件清晰；左侧35%纵排线条图标，四周留5%安全边距。',
+        '03': '关键部件占60%，保留相邻结构定位；斜侧近摄、柔和侧光、背景微虚，允许局部出画。不虚构不可见内部、剖面或彩色颗粒。',
+        '04': '斜侧近景，商品最长边约55%，靠近镜头取景，保持真实尺度与柔和环境光。',
+        '05': '中近景，商品完整可辨、最长边35%～50%，保持真实尺度，焦点落在商品和作用处。',
+        '06': f'纯白背景，确认随货的{qty}件完整分开可数，正面或垂直俯拍，中央70%构图、四周留15%标注空间。比例按附件，均匀光线、轮廓清楚，保留本体印刷。',
+        '07': '每格按实际操作件数展示同款商品，主体约占半格，尺度与接触合理，光线色调统一。',
+        '08': '中近景，商品最长边30%～45%，保持真实尺度、关键部件无遮挡，自然柔光，结果清楚。',
+    }
+    if slot == '07':
+        parts.append('四格按左上、右上、左下、右下排列：' if entry.get('layout', '2x2') == '2x2' else '四格按左侧大格、右上、右中、右下排列：')
+        if note: parts.append('四格场景改为：' + note.strip() + '。')
+        else: parts.extend(f'{i}.{scene_text}。' for i, scene_text in enumerate(scenes, 1))
+    if note and slot not in ('04', '05', '07', '08'):
+        parts.append('本次构图与外观修正：' + note.strip() + ('；允许局部出画，不画不可见内部或剖面。' if slot == '03' else f'；售卖数量仍为{qty}件。'))
+    elif not note:
+        parts.append(frames[slot])
+    if slot in ('04', '05', '08') and has_people(scene if not note else note):
+        parts.append({'04': '只露手和少量手臂，不遮关键部件。',
+                      '05': '人物肩以下或背影入镜，不露脸。',
+                      '08': '保留素材人物身份和脸，正脸或轻微侧正脸，表情自然。'}[slot])
+    if slot == '03':
+        macro = next((i for i, ref in enumerate(references, 1) if ref['role'] == 'macro'), None)
+        parts.append(f'右下一个白边小放大圈，仅依据图{macro}，不重复整件。' if zoom and macro else '不加放大圈。')
     if slot in ('01', '06') or mode == 'base-overlay':
-        body += ' 前述图标文字/场景名仅供构图定位与后期脚本使用，本次不画任何新增文字；保留本体真实印刷。'
+        parts.append('不新增文字、数字、箭头、图标或emoji。')
     else:
-        body += (' 图中文字逐字照抄以下 JSON 列表，不得改一个字、重音或数字：'
-                 + json.dumps(text, ensure_ascii=False)
-                 + '。只用这些文字。标题大号粗体无衬线，占宽约六成；深灰/深蓝高对比字，'
-                   '场景文字放顶部半透明白横条，不压人脸和产品。')
-    return lead + body + (' 本图补充：' + note if note else '') + ' 最多初次生成加一次修正；逐字校对，失败留问题。导出 1200×1200 sRGB JPG，严格小于 3145728 bytes。'
+        if entry.get('title'): parts.append(f'顶部深色粗体标题“{entry["title"]}”。')
+        if entry.get('subtitle'): parts.append(f'副标题“{entry["subtitle"]}”。')
+        if slot == '02' and entry.get('points'):
+            parts.append('图标及短语：' + '；'.join(f'{p["icon"]}：“{p["text"]}”' for p in entry.get('points', [])) + '。')
+        if slot == '07' and entry.get('scenes'):
+            parts.append('各格标签依次：' + '；'.join(f'“{s["title"]}”' for s in entry.get('scenes', [])) + '。')
+        parts.append('西语逐字照抄，保留重音大小写；大字放留白，避开商品和人物，不重复、不加其他字、认证标志或emoji。')
+    return '\n'.join(parts)

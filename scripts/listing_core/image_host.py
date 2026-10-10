@@ -164,6 +164,8 @@ def setup(ws, shop, repo, yes=False, branch='main'):
 
 
 def selection(batch, include_unreviewed=False):
+    from .image_readiness import group_issues
+    failures = group_issues(batch)
     reviews = review_data(batch)['reviews']
     groups = variant_folders(batch / 'variantes.csv')
     items, skipped = [], []
@@ -176,6 +178,9 @@ def selection(batch, include_unreviewed=False):
             for slot, filename in sorted(names.items()):
                 path = output_dir(batch / 'images', group, variant) / filename
                 jid = f'{group}/{variant}/{slot}'
+                if group in failures:
+                    skipped.append(dict(id=jid, reason='；'.join(failures[group])))
+                    continue
                 if not path.is_file():
                     skipped.append(dict(id=jid, reason='缺成品图'))
                     continue

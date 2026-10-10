@@ -5,7 +5,7 @@ from decimal import Decimal, InvalidOperation
 from .common import Problem, require
 
 INHERITED = ('category', 'gpsr_name', 'gpsr_safety', 'sku_include_ean', 'gpsr_measure_suffix',
-             'image_description', 'image_scenes07', 'use_scene', 'hero_feature')
+             'image_description', 'image_scenes07', 'use_scene', 'hero_feature', 'scene_briefs', 'description_images')
 
 
 def resolve_content(raw, groups):
@@ -44,8 +44,23 @@ def seller_sku(row, shop, item):
     return f"{shop['sku']['prefix']}{row['shop']}-{row['art_id']}" + colour + (f'-P{qty}' if qty > 1 else '')
 
 
-def content_errors(group, item):
+def scene_errors(group, item):
+    """检查出图事实；规划时作为组级 blocker，check 时作为文案错误。"""
     errors = []
+    for key in ('use_scene', 'hero_feature'):
+        if not isinstance(item.get(key), str) or not item[key].strip():
+            errors.append(f'{group} 缺非空 {key}；请在 content.json 补齐中文出图事实。')
+    briefs = item.get('scene_briefs')
+    for slot in ('04', '05', '08'):
+        brief = briefs.get(slot) if isinstance(briefs, dict) else None
+        for key in ('location', 'action', 'connections', 'visible_result'):
+            if not isinstance(brief, dict) or not isinstance(brief.get(key), str) or not brief[key].strip():
+                errors.append(f'{group} 缺 scene_briefs.{slot}.{key}；请写清位置、动作、连接和可见结果，无管线时写接触关系。')
+    return errors
+
+
+def content_errors(group, item):
+    errors = scene_errors(group, item)
     def bad(message): errors.append(f'content.json 的 {group}：{message}；请修改该组文案。')
     for key in ('title', 'description', 'attributes', 'warning', 'warning_text', 'category'):
         if not isinstance(item.get(key), str): bad(f'缺少字符串字段 {key}')
@@ -66,6 +81,12 @@ def content_errors(group, item):
         scenes = item['image_scenes07']
         if not isinstance(scenes, list) or len(scenes) not in (0, 4) or not all(isinstance(s, str) and s.strip() for s in scenes):
             bad('image_scenes07 应为空数组或四个非空场景说明')
+    if 'description_images' in item:
+        order = item['description_images']
+        if (not isinstance(order, list) or not order or
+                any(not isinstance(s, str) or s not in tuple(f'{n:02d}' for n in range(1, 9)) for s in order) or
+                len(set(order)) != len(order) or '03' not in order or order[0] == '03'):
+            bad('description_images 应为不重复的 01～08 槽位数组，第一项是结果图，另含 03 细节图')
     for key, value in item.items():
         if isinstance(value, str) and re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', value):
             bad(f'{key} 含 Excel 不支持的控制字符')

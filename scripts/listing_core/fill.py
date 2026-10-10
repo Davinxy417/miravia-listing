@@ -1,5 +1,8 @@
 """检查与填表共用准备流程；只有验证通过后才原子替换输出。"""
 import tempfile
+import re
+from html import escape
+from html.parser import HTMLParser
 from collections import defaultdict
 from pathlib import Path
 from zipfile import ZipFile
@@ -18,18 +21,80 @@ from .xlsm import patch_sheet, sheet_part, verify_integrity
 DESCRIPTION_MAX = 3000  # 模板 Descripción 上限
 
 
-def description_html(text, gallery):
-    """图床图插进描述:02 卖点图放最前,03 细节和 04/07/08 场景图放文字后;友购占位图不插。超长就从后往前少插。"""
-    real = lambda i: i < len(gallery) and gallery[i] and 'freex.es' not in gallery[i]
-    top = [gallery[1]] if real(1) else []
-    bottom = [gallery[i] for i in (2, 3, 6, 7) if real(i)]
-    tag = lambda url: f'<p><img src="{url}" style="width:100%"/></p>'
-    while True:
-        html = ''.join(map(tag, top)) + text + ''.join(map(tag, bottom))
-        if len(html) <= DESCRIPTION_MAX or not (top or bottom): return html
-        (bottom or top).pop()
+def description_html(text, gallery, order=None, warnings=None, group=''):
+    """利益句→结果→卖点→细节→用法→补充图→关键词；优先保住前两图。"""
+    order = order if order is not None else ['08', '03', '04', '07']
+    # Gallery columns may be compacted when a slot is missing. Resolve by the
+    # standard filename, never mistake the fourth URL for slot 04.
+    from .image_layout import SLOTS
+    from urllib.parse import urlsplit
+    urls = {slot: url for slot, filename in SLOTS.items() for url in gallery
+            if urlsplit(url).path.rsplit('/', 1)[-1] == filename}
+    tags = {slot: f'<p><img src="{escape(urls[slot], quote=True)}" style="width:100%"/></p>'
+            for slot in order if slot in urls}
+    keywords = re.findall(r'<p\b[^>]*>(?:(?!</p>).)*PALABRAS CLAVE(?:(?!</p>).)*</p>', text, re.I | re.S)
+    for paragraph in keywords: text = text.replace(paragraph, '')
+    keywords = ''.join(keywords)
+    opener = re.match(r'\s*<p\b[^>]*>.*?</p>', text, re.I | re.S)
+    head = opener.group() if opener else ''
+    body = text[len(head):]
+    result_slot = order[0]
+    optional = [s for s in order if s not in (result_slot, '03') and s in tags]
+    def render():
+        usage = re.search(r'<p\b[^>]*>\s*(?:<b>|<strong>)?\s*(?:C[ÓO]MO\b|USO\b|MODO DE USO\b|CONTENIDO\b|COMPATIB\w*\b|INSTALACI[ÓO]N\b)', body, re.I)
+        index = usage.start() if usage else len(body)
+        return (head + tags.get(result_slot, '') + body[:index] + tags.get('03', '') + body[index:]
+                + ''.join(tags[s] for s in optional) + keywords)
+    html = render()
+    while len(html) > DESCRIPTION_MAX and optional:
+        removed = optional.pop()
+        if warnings is not None: warnings.add(f'{group} 描述超过 3000 字符，已删除插图 {removed}，保留结果图和 03 细节图。')
+        html = render()
+    if len(html) > DESCRIPTION_MAX:
+        # Compress only prose, with balanced tags, never cut a URL or Spanish image text.
+        budget = DESCRIPTION_MAX - len(html) + len(body)
+        require(budget > 30, f'{group} 结果图和细节图网址过长；请缩短图床网址或开场/关键词文案，不能删掉这两张图。')
+        body = shorten_html(body, budget)
+        if warnings is not None: warnings.add(f'{group} 描述过长，已压缩正文；结果图、03 细节图和末尾关键词保留，请核对文案。')
+        html = render()
+    require(len(html) <= DESCRIPTION_MAX, f'{group} 描述仍超过 3000 字符；请精简开场和关键词。')
+    return html
 
-def prepare(template, batch, shop):
+
+def shorten_html(text, limit):
+    class Shortener(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self.parts, self.stack, self.stopped = [], [], False
+        def room(self, extra=''):
+            return limit - len(''.join(self.parts)) - sum(len(t)+3 for t in self.stack) - len(extra)
+        def handle_starttag(self, tag, attrs):
+            if self.stopped: return
+            raw = self.get_starttag_text()
+            closing = '' if tag in ('br', 'img', 'hr') else f'</{tag}>'
+            if self.room(raw + closing) < 0: self.stopped = True; return
+            self.parts.append(raw)
+            if closing: self.stack.append(tag)
+        def handle_endtag(self, tag):
+            if tag in self.stack:
+                while self.stack:
+                    current = self.stack.pop(); self.parts.append(f'</{current}>')
+                    if current == tag: break
+        def handle_data(self, data):
+            if self.stopped: return
+            value = escape(data, quote=False)
+            if len(value) <= self.room(): self.parts.append(value); return
+            kept = ''
+            for char in data:
+                candidate = kept + escape(char, quote=False)
+                if len(candidate) + 1 > self.room(): break
+                kept = candidate
+            if self.room() > 0: self.parts.append(kept + '…')
+            self.stopped = True
+    parser = Shortener(); parser.feed(text); parser.close()
+    return ''.join(parser.parts) + ''.join(f'</{t}>' for t in reversed(parser.stack))
+
+def prepare(template, batch, shop, groups=None):
     errors, warnings = [], set()
     def read(fn, fallback):
         try: return fn()
@@ -40,7 +105,7 @@ def prepare(template, batch, shop):
     candidates = read(lambda: read_csv(batch / 'candidates.csv'), [])
     require(rows, 'priced.csv 没有可填商品；请先运行 price。')
     raw_content = read(lambda: read_json(batch / 'content.json'), {})
-    content, issues = resolve_content(raw_content, [r['group'] for r in rows])
+    content, issues = resolve_content(raw_content, [r['group'] for r in rows if groups is None or r['group'] in groups])
     errors.extend(issues)
     mappings = read(lambda: read_variantes(batch / 'variantes.csv'), {})
     images = read(lambda: read_image_urls(batch / 'images.csv', mappings), {})
@@ -48,6 +113,9 @@ def prepare(template, batch, shop):
         errors.append('priced.csv 与 candidates.csv 不一致；候选商品改动后请重新运行 price。')
     if (batch / 'candidates.csv').exists() and (batch / 'priced.csv').stat().st_mtime_ns < (batch / 'candidates.csv').stat().st_mtime_ns:
         warnings.add('priced.csv 比 candidates.csv 旧；请确认是否需要重新定价。')
+    if groups is not None:
+        rows = [r for r in rows if r['group'] in groups]
+        content = {g: item for g, item in content.items() if g in groups}
     wb = openpyxl.load_workbook(template, keep_vba=True)
     try:
         columns = resolve_columns(wb)
@@ -116,7 +184,7 @@ def prepare(template, batch, shop):
             for row in variants:
                 maker = shop['suppliers'][row['shop']]
                 fields = dict(group=group, category=item['category'], title=item['title'], brand=shop['brand'],
-                              attributes=item['attributes'], description=description_html(item['description'], gallery), warning=item['warning'],
+                              attributes=item['attributes'], description=description_html(item['description'], gallery, item.get('description_images'), warnings, group), warning=item['warning'],
                               warning_text=item['warning_text'], variant_image=principals[mappings[variant_key(row)]],
                               ean=row['ean'], sku=seller_sku(row, shop, item), price=number(row['price'], 'price'),
                               original_price=number(row['price'], 'price'), stock=shop['stock_default'],
@@ -134,12 +202,13 @@ def prepare(template, batch, shop):
         wb.close()
 
 
-def inspect_local_images(batch):
+def inspect_local_images(batch, groups=None):
     """只读提示；本地文件并不是已托管 URL 的必要条件。"""
     warnings = []
     manifest = batch / 'image_files.csv'
     if not manifest.exists(): return ['缺 image_files.csv；有本地图片后请运行 images-collect。']
     for row in read_csv(manifest):
+        if groups is not None and row['group'] not in groups: continue
         raw = row['local_path'].replace('\\', '/')
         path = Path(raw)
         require(raw and not path.is_absolute() and '..' not in path.parts and ':' not in raw,
@@ -148,14 +217,14 @@ def inspect_local_images(batch):
     return warnings
 
 
-def run(template, batch, shop, check=False):
+def run(template, batch, shop, check=False, groups=None):
     local_warnings, local_errors = [], []
     if check:
-        try: local_warnings = inspect_local_images(batch)
+        try: local_warnings = inspect_local_images(batch, groups)
         except (ValueError, OSError) as exc:
             local_errors = exc.errors if isinstance(exc, Problem) else [f'图片清单检查失败：{exc}；请检查 image_files.csv。']
     try:
-        values, warnings, columns, width = prepare(template, batch, shop)
+        values, warnings, columns, width = prepare(template, batch, shop, groups)
     except Problem as exc:
         raise Problem(exc.errors + local_errors, exc.warnings + local_warnings) from exc
     if check:

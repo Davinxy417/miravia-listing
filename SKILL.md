@@ -62,21 +62,23 @@ Windows 上先设 `PYTHONIOENCODING=utf-8`,否则自己用 Python 读中文文�
 5. **调研同款**:按 `references/文案规则.md`"调研同款"一节上网找同款,写批次根 `research.json`(参考标题、卖点、规格、搜索词)。
    再用 `mlist keywords "<品类词>" "<品类词+功能>" …` 查买家真实搜索词,写进 research.json 的 `keywords`,标题和描述末尾的 PALABRAS CLAVE 从这里挑。
 6. **文案**:按 `references/文案规则.md` 写 `content.json`(标题、描述、属性、安全提示、类目、GPSR 短名、出图用的外观描述、
-   `use_scene` 真实用法、`hero_feature` 主打卖点)和 `overlays.json`(图上的西语文字,卖点取自 research.json)。
+   `use_scene` 真实用法、`hero_feature` 主打卖点、`scene_briefs` 中04/05/08的位置/动作/连接/结果，可选 `description_images` 插图顺序)和 `overlays.json`(图上的西语文字,卖点取自 research.json)。
    初稿写完按"文案打磨"一节交给 Claude(或自己)改一轮,让描述和图上的字更诱人。类目用 `mlist categories --search <词>` 查原文。
    写完 `mlist check --batch <批次>` 直到没有错误。→ 看着做:给用户看标题和图上的字。
 7. **出图**(一律用 Seedream,不用 Codex/GPT 自带出图,不要自己改成无字模式):`mlist images-plan --batch <批次>`,规则见 `references/出图规则.md`。
-   - 04/05/07/08 要真人素材:先从 Pexels/Unsplash 下载合适的照片放进批次 `internal/stock/`,记进 `stock_fotos.csv`。
+   - **每次付费前必须 `mlist preflight --batch <批次>`**，只读检查模板、供应商下拉、图床、Key是否设置、配置预算余额。组级问题只跳过该组；账户级问题停止付费步骤。预检不联网，不代表服务商账户真实余额。缺场景字段先补齐再规划。
+   - 04/05/07/08 按每张/每格是否有人选真人素材，无人场景不强加人物；07可在stock记录中用完整id加 `-1`～`-4`指定格子:先从 Pexels/Unsplash 下载合适的照片放进批次 `internal/stock/`,记进 `stock_fotos.csv`。
    - 先只出每个变体的 01:`mlist seedream --batch <批次> --auto --only <组/变体/01>...`;审过 01 后重跑 `images-plan`,
      再 `mlist seedream --batch <批次> --auto --all-missing` 出其余位置。结果里 `over_budget` 的记 notes.md。
    - 报"缺 ARK_API_KEY":停止出图,notes.md 写"请设 Key",接着做不需要图的步骤,最后出报告。你不读也不写 Key。
    - 生成完 `mlist images-finish --batch <批次>`,再 `mlist images-sheet --batch <批次> --pending` 出审阅拼图。
    - **全自动:你自己审**,照 `references/出图规则.md`"AI 自审"一节 `images-review --ok/--redo`;重做的先 `images-plan`,再 `seedream --auto --only <重做的 id>`(`--all-missing` 不含重做)。
+     每张必须打开原尺寸和320px缩略图；任一硬伤不通过，两次失败仍保留redo，失败组只出草稿，其他组继续。可用 `--checks` / `--evidence` / `--severity` 记录证据。
      → 看着做:给用户看拼图,按他说的审。
 8. **GPSR 标签**:`mlist gpsr --batch <批次>`(`output/gpsr/print_A4.pdf`,用户打印贴货)。
 9. **发布图片**:`mlist publish-images --batch <批次> --yes`(全自动直接推;看着做时先不带 `--yes`,告诉用户张数,同意再推)。
    还没设图床:跳过,notes.md 写"要先设图床",接着出报告。
-10. **出表**:`mlist finalize --batch <批次> --max-groups <shop.json 的 auto.max_groups_per_file>`(会自动把卖点图和场景图插进描述)。不为真的话 notes.md 写清还差什么。
+10. **出表**:`mlist finalize --batch <批次> --max-groups <shop.json 的 auto.max_groups_per_file>`(按description_images插图，默认08/03/04/07；失败组写miravia_draft.xlsm，独立上传表只含其余组)。不为真的话 notes.md 写清还差什么。
 11. **报告**:`mlist report --batch <批次>`,生成批次根 `早上看这里.md`。最后对用户只说:能不能上传、表在哪、花了多少、要他看的几件事,
     并给出报告的路径。上传方法:后台 → 商品 → 批量上传,选 .xlsm;分了几份就分几天传。
 12. **传完抽查**(用户回来后):请他给几个商品前台链接(或店铺页),抽查约 1/10:类目对不对、图有没有裂、价格是不是表里的。

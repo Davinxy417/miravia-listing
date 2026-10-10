@@ -153,7 +153,7 @@ def main():
         print('setup：未确认零写入/零进程，假 gh 新建公开仓库，已有 README/旧图保留，拒绝私有仓库通过')
         all_items, _ = host.selection(batch, True)
         mark(batch, all_items[:1])
-        mark(batch, all_items[1:2], 'redo')
+        # Failure isolation is exercised by test_a6; here other images stay pending.
         before = snap(ws)
         with patch.object(host, 'command', side_effect=AssertionError('预览不能调用进程')), patch.object(host, 'head_image', side_effect=AssertionError('预览不能联网')):
             code, result = captured(ws, 'publish-images', '--batch', batch.name)
@@ -224,7 +224,7 @@ def main():
         code, result = captured(ws, 'finalize', '--batch', batch.name)
         assert code == 0 and not result['upload_ready'] and not (ws / '台账.csv').exists(), result
         assert any('抽查' in w for w in result['warnings']) and any('占位' in w for w in result['warnings'])
-        # All pictures can be explicitly included, even with pending or redo reviews.
+        # Pending pictures may be included explicitly; failed groups never are.
         code, result = captured(ws, 'publish-images', '--batch', batch.name, '--include-unreviewed', '--yes')
         assert code == 0 and result['count'] == len(all_items) and len(result['checks']) == 5, result
         assert len(csv_rows(batch / 'images.csv')) == len(all_items)
