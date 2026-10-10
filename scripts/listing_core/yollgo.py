@@ -66,12 +66,12 @@ def image_url(shop, product):
                                   (shop['shopId'], product['artId'], '600x600', product['imageHash']))
 
 
-def contact_sheet(batch, items):
+def contact_sheet(batch, items, directory='src'):
     from PIL import Image, ImageDraw, ImageFont, ImageOps
     selected = [item for item in items if item['selected']]
     if not selected:
         # A previous sheet must not falsely represent an empty new fetch.
-        inside(batch, batch / 'src/_sheet.jpg').unlink(missing_ok=True)
+        inside(batch, batch / directory / '_sheet.jpg').unlink(missing_ok=True)
         return None
     font = None
     for name in ('C:/Windows/Fonts/msyh.ttc', 'C:/Windows/Fonts/simhei.ttf', 'DejaVuSans.ttf'):
@@ -88,7 +88,7 @@ def contact_sheet(batch, items):
         offer = selected_offer(item)
         product = offer['product']
         x, y = index % columns * cell_w, index // columns * cell_h
-        path = batch / 'src' / f'{offer["shop_id"]}-{product["artId"]}.jpg'
+        path = Path(item['image_path']) if item.get('image_path') else batch / 'src' / f'{offer["shop_id"]}-{product["artId"]}.jpg'
         if path.is_file():
             with Image.open(path) as source:
                 thumb = ImageOps.contain(ImageOps.exif_transpose(source).convert('RGB'), (310, 290))
@@ -114,7 +114,7 @@ def contact_sheet(batch, items):
     import io
     stream = io.BytesIO()
     sheet.save(stream, format='JPEG', quality=90)
-    path = inside(batch, batch / 'src/_sheet.jpg')
+    path = inside(batch, batch / directory / '_sheet.jpg')
     atomic_bytes(path, stream.getvalue())
     return str(path)
 
@@ -223,7 +223,44 @@ def fetch(ws, batch, shop, client):
                 message='友购查询完成，所有报价已保存；请看原图总览，再填写 groups.json。')
 
 
-def search(client, shop_id, keyword):
+def search(client, shop_id, keyword, root=None):
+    component(shop_id, '友购商家 id')
     rows = client.search(shop_id, keyword)
-    return dict(count=len(rows), products=[dict(barcode=str(row.get('bianhao') or row.get('usercode', '')),
-                name=row.get('namecn') or row.get('namees', ''), price=row.get('precio')) for row in rows])
+    shops = public_shops(client.shops()) if root is not None else {}
+    public = shops.get(shop_id, {'shopId': shop_id})
+    products, items, warnings = [], [], []
+    directory = Path('search') / shop_id
+    for row in rows:
+        art_id = component(str(row.get('artId', '')), '友购货号')
+        product = dict(barcode=str(row.get('bianhao') or row.get('usercode', '')),
+                       art_id=art_id, usercode=str(row.get('usercode', '')),
+                       name=row.get('namecn') or row.get('namees', ''),
+                       namecn=row.get('namecn', ''), namees=row.get('namees', ''),
+                       price=row.get('precio'), image_url=None, image_path=None)
+        if root is not None:
+            target = inside(root, Path(root) / directory / f'{art_id}.jpg')
+            try:
+                require(row.get('imageHash'), f'货号 {art_id} 缺 imageHash')
+                product['image_url'] = image_url(public, row)
+                if not target.is_file():
+                    import io
+                    from PIL import Image
+                    data = client.image(product['image_url'])
+                    with Image.open(io.BytesIO(data)) as source:
+                        source.load()
+                        if source.format != 'JPEG':
+                            stream = io.BytesIO()
+                            source.convert('RGB').save(stream, 'JPEG', quality=95)
+                            data = stream.getvalue()
+                    atomic_bytes(target, data)
+            except (Problem, OSError, ValueError) as exc:
+                warnings.append(f'货号 {art_id} 原图未下载：{exc}；请重跑 yollgo-search 补下。')
+            if target.is_file(): product['image_path'] = str(target)
+            items.append(dict(barcode=product['barcode'], image_path=product['image_path'],
+                selected=dict(shop_id=shop_id, art_id=art_id), offers=[dict(shop_id=shop_id,
+                shop_name=public.get('name', shop_id), product=dict(row,
+                namecn=f"{row.get('usercode', '')}  {row.get('namecn', '')}  {row.get('namees', '')}"))]))
+        products.append(product)
+    sheet = contact_sheet(Path(root), items, directory) if root is not None else None
+    return dict(count=len(products), products=products, sheet=sheet, warnings=warnings,
+                message='友购搜索完成；请看两种原名、货号和候选原图总览再选品。')

@@ -2,18 +2,20 @@
 from datetime import date
 from pathlib import Path
 
-from .common import Problem, inside, read_csv, read_json, require, write_csv
+from .common import Problem, inside, read_csv, read_json, require, write_csv, write_json
 from .collect_images import collect
 from .content import resolve_content, seller_sku
 from .fill import prepare, run as fill, write_upload
 from .images import read_variantes, variant_key
 from .make_images_csv import make_images_csv
 from .image_host import selection
+from .image_workflow import digest
+from .image_readiness import group_issues
 
 LEDGER_FIELDS = ['日期', '批次', '组', '变体', 'EAN', '卖家 SKU', '批发商 id', '友购货号', '进价', '实际成本', '售价', '每单利润']
 
 
-def publication_warnings(batch, shop):
+def publication_warnings(batch, shop, groups=None):
     path = batch / 'image_publish.json'
     if not path.exists():
         return []
@@ -31,6 +33,7 @@ def publication_warnings(batch, shop):
     current = {i['id']: i for i in current}
     urls = {(r['group'], r['variante'], r['slot']): r['url'] for r in read_csv(batch / 'images.csv')}
     for item in report['files']:
+        if groups is not None and item['group'] not in groups: continue
         jid = item['id']
         row = current.get(jid)
         if row is None or row['sha256'] != item['sha256']:
@@ -42,7 +45,7 @@ def publication_warnings(batch, shop):
     return warnings
 
 
-def update_ledger(ws, batch, shop):
+def update_ledger(ws, batch, shop, groups=None):
     target = inside(ws, Path(ws) / '台账.csv')
     previous = read_csv(target, LEDGER_FIELDS) if target.exists() else []
     rows = read_csv(batch / 'priced.csv')
@@ -54,6 +57,7 @@ def update_ledger(ws, batch, shop):
     dates = {(r['批次'], r['EAN']): r['日期'] for r in previous}
     updated = []
     for row in rows:
+        if groups is not None and row['group'] not in groups: continue
         key = batch.name, row['ean']
         updated.append(dict(zip(LEDGER_FIELDS, [dates.get(key, date.today().isoformat()), batch.name,
             row['group'], mappings[variant_key(row)], row['ean'], seller_sku(row, shop, content[row['group']]),
@@ -63,8 +67,8 @@ def update_ledger(ws, batch, shop):
     return str(target)
 
 
-def split_uploads(template, batch, shop, limit):
-    values, _, columns, width = prepare(template, batch, shop)
+def split_uploads(template, batch, shop, limit, groups=None):
+    values, _, columns, width = prepare(template, batch, shop, groups)
     families = {}
     for row in values:
         group = row[columns['group'] - 1]
@@ -107,21 +111,54 @@ def finalize(ws, batch, shop, template, max_groups=None, base_url=None):
         make_images_csv(base_url, batch / 'image_files.csv', batch / 'images.csv', batch / 'variantes.csv', batch / 'images')
     # No automatic base_url concatenation for GitHub: its path differs from local paths.
     # Missing/empty URLs are permitted as a draft and are diagnosed by fill/check.
-    result = fill(template, batch, shop)
-    checked = fill(template, batch, shop, check=True)
+    failures = group_issues(batch, require_complete=True)
+    all_groups = {r['group'] for r in read_csv(batch / 'priced.csv')}
+    eligible = all_groups - failures.keys()
+    drafts = []
+    if failures:
+        values, draft_warnings, columns, width = prepare(template, batch, shop, set(failures))
+        draft = inside(batch, batch / 'output/miravia_draft.xlsm')
+        write_upload(template, draft, values, columns, width)
+        drafts.append(str(draft))
+    else:
+        draft_warnings = []
+    # Collection warnings from failed groups belong to the draft, not the
+    # independent upload file. Required slots for eligible groups were checked.
+    warnings = [w for w in warnings if not any(w.startswith(g + '/') for g in failures)]
+    result = fill(template, batch, shop, groups=eligible)
+    checked = fill(template, batch, shop, check=True, groups=eligible)
     warnings.extend(result['warnings'])
     warnings.extend(checked['warnings'])
-    warnings.extend(publication_warnings(batch, shop))
+    warnings.extend(publication_warnings(batch, shop, eligible))
     warnings = list(dict.fromkeys(warnings))
     result['warnings'] = warnings
-    result['upload_ready'] = not warnings and checked['upload_ready']
-    outputs = split_uploads(template, batch, shop, max_groups) if max_groups else [result['output']]
+    result['upload_ready'] = bool(eligible) and not warnings and checked['upload_ready']
+    outputs = split_uploads(template, batch, shop, max_groups, eligible) if max_groups else ([result['output']] if eligible else [])
+    if not max_groups:
+        for path in (batch / 'output').glob('miravia_upload_*.xlsm'):
+            if path.stem.removeprefix('miravia_upload_').isdigit(): inside(batch, path).unlink()
+    if not eligible:
+        inside(batch, Path(result['output'])).unlink(missing_ok=True)
+        result['output'] = drafts[0] if drafts else ''
+    if not failures:
+        inside(batch, batch / 'output/miravia_draft.xlsm').unlink(missing_ok=True)
     result['outputs'] = outputs
     result['missing'] = warnings
+    result.update(draft_outputs=drafts, draft_groups=failures, draft_warnings=draft_warnings,
+                  eligible_groups=sorted(eligible))
     if result['upload_ready']:
-        result['ledger'] = update_ledger(ws, batch, shop)
+        result['ledger'] = update_ledger(ws, batch, shop, eligible)
     paths = '\n'.join(outputs)
     result['message'] = ('可以上传；已更新上架台账。上传表：\n' if result['upload_ready'] else '已生成草稿表，还不能上传；请处理下面提醒后重跑 finalize。表在：\n') + paths
-    if max_groups:
+    if max_groups and outputs:
         result['message'] += '\n请按列出的分批表上传；output/miravia_upload.xlsm 是完整备份。'
+    if failures:
+        result['message'] += '\n以下组只出草稿，未放入上传表：' + '、'.join(sorted(failures)) + '\n草稿：' + '\n'.join(drafts)
+    if not eligible:
+        result['message'] = 'finalize 已完成，但全部组只出草稿，不能上传。草稿：\n' + '\n'.join(drafts)
+        result['message'] += '\n请修复以下图片并重新审阅，然后再次 finalize：\n' + '\n'.join(
+            reason for reasons in failures.values() for reason in reasons)
+    write_json(inside(batch, batch / 'finalize_result.json'), dict(
+        version=1, eligible_groups=sorted(eligible), draft_groups=failures, draft_outputs=drafts,
+        outputs={Path(p).name: digest(p) for p in outputs}, upload_ready=result['upload_ready']))
     return result

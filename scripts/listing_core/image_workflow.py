@@ -9,9 +9,10 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from .common import Problem, atomic_bytes, component, guard_images, inside, read_csv, read_json, require, write_json
-from .content import number, resolve_content
+from .content import number, resolve_content, scene_errors
 from .image_layout import SHARED_SLOTS, SLOTS, hero_variant, output_dir
-from .image_prompts import make_prompt
+from .image_prompts import make_prompt, has_people, product_aspect
+from .image_background import normalize_white_background, WHITE_BACKGROUND_VERSION
 from .images import read_variantes, variant_key
 from . import overlay
 
@@ -122,11 +123,21 @@ def make_plan(batch, mode='model-text'):
             require(isinstance(scenes, list) and (not scenes or len(scenes) == 4) and all(isinstance(s, str) and s.strip() for s in scenes),
                     f'{group} 的 image_scenes07 应为空或四个场景描述。')
             slots = [*SLOTS, 'variante'] if variant == heroes[group] else ['01', 'variante']
+            principal = output_dir(batch / 'images', group, variant) / SLOTS['01']
+            aspect_source = principal if principal.is_file() else next((batch / 'src' / f"{r['shop']}-{r['art_id']}.jpg"
+                            for r in rows if (batch / 'src' / f"{r['shop']}-{r['art_id']}.jpg").is_file()), None)
+            aspect = product_aspect(aspect_source) if aspect_source else 1.0
             for slot in slots:
                 jid = f'{group}/{variant}/{slot}'
                 output = output_dir(batch / 'images', group, variant) / ('variante.jpg' if slot == 'variante' else SLOTS[slot])
-                source_id, refs, blockers = None, [], []
+                source_id, references, blockers = None, [], []
+                def attach(path, role, use):
+                    references.append(dict(path=path, role=role, use=use))
                 entry = cfg.get('slots', {}).get(slot, {})
+                record = review.get(jid, {})
+                reason = record.get('note', '') if record.get('result') == 'redo' else ''
+                briefs = item.get('scene_briefs', {})
+                brief = briefs.get(slot, {}) if isinstance(briefs, dict) else {}
                 if slot == 'variante':
                     method, source_id = 'derive', f'{group}/{variant}/01'
                 elif base != group and slot in SHARED_SLOTS:
@@ -134,31 +145,67 @@ def make_plan(batch, mode='model-text'):
                     method, source_id = 'copy', f'{base}/{heroes[base]}/{slot}'
                 else:
                     method = 'model' if slot == '01' else 'script' if slot == '06' else mode
+                    blockers.extend(scene_errors(group, item))
                     if slot not in ('01',) and not entry:
                         blockers.append(f'overlays.json 缺 {group}/{slot} 文案')
                     principal = output_dir(batch / 'images', group, variant) / SLOTS['01']
-                    refs = [rel(batch, principal)] if slot != '01' else []
+                    if slot != '01':
+                        attach(rel(batch, principal), 'product', '锁定当前变体商品外观')
+                        approved = review.get(f'{group}/{variant}/01', {})
+                        if approved.get('result') != 'ok' or approved.get('sha256') != digest(principal) or not principal.is_file():
+                            blockers.append('本变体 01 尚未审阅通过；先完成主图并 images-review --ok，再扩展')
                     # Actual source for this variant, not another colour's hero.
                     for row in rows:
                         src = batch / 'src' / f"{row['shop']}-{row['art_id']}.jpg"
-                        if src.is_file(): refs.append(rel(batch, src))
-                    if slot == '01' and not refs and principal.exists(): refs.append(rel(batch, principal))
+                        if slot == '01' and src.is_file():
+                            attach(rel(batch, src), 'product', '锁定当前变体商品外观，包装与重复展示不计件数')
+                    if slot == '01' and not references and principal.exists():
+                        attach(rel(batch, principal), 'product', '锁定当前变体商品外观')
                     root = batch / 'images' / group / variant / 'internal/base'
                     if variant == heroes[group] and not root.is_dir(): root = batch / 'images' / group / 'internal/base'
+                    if slot in ('04', '05', '07', '08'):
+                        # Variant structure always wins; group structure belongs only to its hero.
+                        structure_paths = [batch / 'images' / group / variant / 'internal/base/structure.jpg']
+                        if variant == heroes[group]:
+                            structure_paths.append(batch / 'images' / group / 'internal/base/structure.jpg')
+                        structure_paths += [batch / 'src' / f"{r['shop']}-{r['art_id']}.jpg" for r in rows]
+                        structure = next((p for p in structure_paths if p.is_file()), None)
+                        if structure:
+                            attach(rel(batch, structure), 'structure', '锁定结构和隔板数量')
                     if slot == '07':
                         bases = [root / f'07-{c}.jpg' for c in 'abcd']
-                        if all(p.is_file() for p in bases): refs += [rel(batch, p) for p in bases]
+                        if all(p.is_file() for p in bases):
+                            for i, p in enumerate(bases, 1):
+                                attach(rel(batch, p), 'scene', f'仅补充第{i}格的已核实场景')
                         elif not scenes: blockers.append('07 缺四格场景描述或四张已核实无字场景底图')
                     else:
                         clean = root / overlay.BASE_NAMES.get(slot, SLOTS[slot])
-                        if clean.is_file(): refs.append(rel(batch, clean))
-                    if slot == '03' and cfg.get('zoom') and (root / 'macro.jpg').is_file(): refs.append(rel(batch, root / 'macro.jpg'))
-                    if slot in ('04', '05', '08'):
-                        people = stock_refs(batch, jid)
-                        refs += people
-                        if not people: blockers.append('请先选 Pexels/Unsplash 真人素材并按此 id 记录 stock_fotos.csv；旧底图来源须人工核对')
-                refs = list(dict.fromkeys(refs))
-                missing_refs = [r for r in refs if not read_path(batch, r).is_file()]
+                        if slot == '03' and clean.is_file(): attach(rel(batch, clean), 'detail', '仅补充可见部件细节')
+                    if slot == '03' and cfg.get('zoom') and (root / 'macro.jpg').is_file():
+                        attach(rel(batch, root / 'macro.jpg'), 'macro', '提供真实微距细节')
+                    people_needed = (has_people(reason or brief) if slot in ('04', '05', '08') else
+                                     any(has_people(s) for s in ([reason] if reason else scenes)) if slot == '07' else False)
+                    if people_needed:
+                        cells = [(i, s) for i, s in enumerate(scenes, 1) if has_people(s)] if slot == '07' and not reason else [(None, reason or brief)]
+                        for index, _ in cells:
+                            people = stock_refs(batch, jid + f'-{index}') if index else []
+                            people = people or stock_refs(batch, jid)
+                            for path in people:
+                                attach(path, 'people', (f'仅供第{index}格' if index else '') + '人物身份和姿态，背景按本图场景生成')
+                            if not people: blockers.append((f'07第{index}格：' if index else '') + '请先选 Pexels/Unsplash 真人素材并按此 id 记录 stock_fotos.csv；旧底图来源须人工核对')
+                filtered, seen, missing_refs = [], set(), []
+                for ref in references:
+                    path = read_path(batch, ref['path'])
+                    if not path.is_file():
+                        missing_refs.append(ref['path']); continue
+                    key = path.resolve()
+                    if key not in seen:
+                        seen.add(key); filtered.append(ref)
+                    else:
+                        previous = next(r for r in filtered if read_path(batch, r['path']).resolve() == key)
+                        if ref['use'] not in previous['use']: previous['use'] += '；' + ref['use']
+                references = filtered
+                refs = [r['path'] for r in references]
                 if not refs and method not in ('copy', 'derive'): blockers.append('缺实际参考图；先补本变体 src 原图/主图')
                 if missing_refs: blockers.append('参考图尚缺：' + '、'.join(missing_refs))
                 record = review.get(jid, {})
@@ -169,14 +216,13 @@ def make_plan(batch, mode='model-text'):
                 raw = raw_latest(batch, group, variant, slot) if method not in ('copy', 'derive') else None
                 prompt = '' if method in ('copy', 'derive') else make_prompt(slot, description, variant, qty, entry,
                               'base-overlay' if method in ('model', 'script', 'base-overlay') else mode,
-                              scenes=scenes, zoom=cfg.get('zoom', False), note=reason)
-                if slot == '06':
-                    dims, capacities = overlay.verified_specs(rows)
-                    prompt += ' 脚本事实（禁止模型画字/数字）：' + str({'dims_cm': [] if base != group else dims,
-                                                                       'capacities': [] if base != group else capacities, 'pack_qty': qty})
+                              scenes=scenes, zoom=cfg.get('zoom', False), note=reason,
+                              use_scene=item.get('use_scene', ''), hero_feature=item.get('hero_feature', ''),
+                              references=references, scene_brief=brief,
+                              structure_lock=item.get('structure_lock', '') if isinstance(item.get('structure_lock', ''), str) else '', aspect=aspect)
                 jobs.append(dict(id=jid, group=group, variant=variant, slot=slot, output=rel(batch, output),
                                  raw_dir=f'images/{group}/{variant}/internal/raw', raw=rel(batch, raw) if raw else None,
-                                 refs=refs, method=method, mode=mode, source_id=source_id, prompt=prompt,
+                                 refs=refs, reference_images=references, method=method, mode=mode, source_id=source_id, prompt=prompt,
                                  status=state, reason=reason, reviewed=reviewed, blockers=blockers, pack_qty=qty))
     by_id = {j['id']: j for j in jobs}
     for job in jobs:
@@ -198,6 +244,7 @@ def plan(batch, mode='model-text'):
     data = make_plan(batch, mode)
     lines = ['# 出图清单', '', f'模式：{mode}。所有路径相对本批次：{batch}。', '',
              '实际附上所列参考文件；先完成各变体 01，核对结构/原图颜色/数量，再扩展主推款。',
+             '自审逐项数格数、按钮数、件数及隔板位置；对照原图与 structure_lock，数量不符或看不清即重做。',
              '每张最多初次生成＋一次修正；两次仍失败记问题。不要凭空补材质、规格、认证或配件。',
              '带字图只用 prompt 中逐字文字，出完逐字校对；06 只生成无字底图，数字由脚本画。',
              '原始生成图存到本项 raw_dir/<槽位>-v01.png（修正用 v02）；不要直接覆盖成品。',
@@ -295,7 +342,11 @@ def finish(batch, groups=None, only=None):
             if not target.is_file(): warnings.append(f'{jid} 缺原始图或来源成品；请按清单补齐后重跑 images-finish。')
             else: sync_shared(job, target.read_bytes())
             skipped.append(jid); continue
-        signature = hashlib.sha256((str([digest(p) for p in base_tiles] if base_tiles else digest(source)) + job['prompt'] + str(cfg) + str(rows)).encode()).hexdigest()
+        # A prompt/reference-role change does not alter already generated raw
+        # pixels. Only inputs consumed by finishing may invalidate installation.
+        signature = hashlib.sha256((str([digest(p) for p in base_tiles] if base_tiles else digest(source)) + job['method'] + str(cfg) + str(rows)).encode()).hexdigest()
+        if slot in ('01', 'variante'):
+            signature += f':white-{WHITE_BACKGROUND_VERSION}'
         if manifest.get(jid) == {'input': signature, 'output': digest(target)}:
             sync_shared(job, target.read_bytes())
             skipped.append(jid); continue
@@ -318,6 +369,8 @@ def finish(batch, groups=None, only=None):
                     im = overlay.collage(paths, cfg['slots']['07'], overlay.palette(im))
                 else:
                     im = overlay.render(source, slot, cfg, overlay.palette(im), rows)
+            if slot in ('01', 'variante'):
+                im = normalize_white_background(im)
             # Reuse compression and ICC implementation but install atomically with backup.
             stream = io.BytesIO()
             for quality in (94, 90, 85, 80, 75, 65, 50):
@@ -382,11 +435,13 @@ def sheet(batch, name='review', groups=None, only=None, pending=False):
     return dict(count=len(jobs), output=outputs[0], outputs=outputs, message='审阅拼图已生成；缺图保留空格和状态。')
 
 
-def review(batch, ok=None, redo=None, note=''):
+def review(batch, ok=None, redo=None, note='', checks=None, evidence=None, severity=None):
     ok, redo = ok or [], redo or []
     require(ok or redo, '请用 --ok 或 --redo 指定完整 id。')
     require(not set(ok) & set(redo), '同一张图片不能同时通过和重做；请拆成两次决定。')
     require(not redo or note.strip(), '标记重做需要 --note 写明原因，例如“颜色偏了”。')
+    require(severity in (None, 'minor', 'major', 'critical'), 'severity 请用 minor、major 或 critical。')
+    require(not ok or severity not in ('major', 'critical'), '有硬伤不能通过，请使用 --redo 保留失败状态。')
     jobs = make_plan(batch, plan_mode(batch))['jobs']
     selected = select(jobs, only=ok + redo)
     records = review_data(batch)
@@ -396,8 +451,10 @@ def review(batch, ok=None, redo=None, note=''):
     inside(batch, batch / 'image_review.json')
     for j in selected:
         records['reviews'][j['id']] = dict(result='ok' if j['id'] in ok else 'redo',
-                                          note='' if j['id'] in ok else note.strip(),
+                                          note=note.strip(),
                                           sha256=digest(batch / j['output']), at=datetime.now(timezone.utc).isoformat())
+        for key, value in (('checks', checks), ('evidence', evidence), ('severity', severity)):
+            if value is not None: records['reviews'][j['id']][key] = value
     write_json(batch / 'image_review.json', records)
     return dict(count=len(selected), output=str(batch / 'image_review.json'), message='审阅结果已记录；成品变化后原通过记录自动失效。')
 

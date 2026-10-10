@@ -22,6 +22,8 @@ from PIL import Image, ImageChops, ImageCms, ImageDraw, ImageFilter, ImageFont, 
 
 from .image_layout import ROOT, SHARED_SLOTS, SLOTS, hero_variant, output_dir, variant_folders
 from .line_icons import icon
+from .common import source_names
+from .image_background import normalize_white_background
 
 SIZE = 1200
 MAX_BYTES = 3145728
@@ -113,6 +115,8 @@ def load_image(path, contain=False):
 
 def save_jpg(im, path):
     path = Path(path)
+    if path.name in (SLOTS['01'], 'variante.jpg'):
+        im = normalize_white_background(im)
     path.parent.mkdir(parents=True, exist_ok=True)
     for quality in (94, 90, 85, 80, 75, 65, 50):
         blob = io.BytesIO()
@@ -337,13 +341,15 @@ def verified_specs(rows):
     """Only source product names, never estimated shipping dimensions."""
     measures, capacities = set(), set()
     for row in rows:
-        name = row["src_name"].upper().replace(",", ".")
-        match = re.search(r"(\d+(?:\.\d+)?(?:\s*X\s*\d+(?:\.\d+)?){0,2})\s*CM\b",name)
-        if match and not name.startswith("JERSEY"):
-            measures.add(tuple(match[1].replace(" ","").split("X")))
-        match = re.search(r"(\d+(?:\.\d+)?)\s*(ML|L)\b",name)
-        if match:
-            capacities.add(match[1].replace(".",",")+" "+match[2])
+        names = [name.upper().replace(',', '.').replace('×', 'X') for name in source_names(row)]
+        is_clothing = any(name.startswith('JERSEY') for name in names)
+        for name in names:
+            match = re.search(r"(\d+(?:\.\d+)?(?:\s*X\s*\d+(?:\.\d+)?){0,2})\s*CM\b",name)
+            if match and not is_clothing:
+                measures.add(tuple(match[1].replace(" ","").split("X")))
+            match = re.search(r"(\d+(?:\.\d+)?)\s*(ML|L)\b",name)
+            if match:
+                capacities.add(match[1].replace(".",",")+" "+match[2])
     # A shared folder with several physical sizes cannot have one set of arrows.
     return next(iter(measures)) if len(measures) == 1 else (), sorted(capacities)
 

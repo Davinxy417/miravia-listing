@@ -1,5 +1,6 @@
 """只通过已登录网页调用友购自身函数；不接触密码、签名或 token。"""
 from contextlib import contextmanager
+import time
 
 from .common import Problem, inside, require
 
@@ -92,18 +93,58 @@ def session_alive(page):
         return False
 
 
-def wait_for_login(page):
+LOGIN_TIMEOUT = '友购自动登录没成功(可能要验证码或密码失效);请醒来后运行 mlist yollgo-login 手动登录,再重跑 fetch。'
+PASSWORD = 'input[ng-model="input.password"]'
+AUTOFILLED = """() => {
+    const el = document.querySelector('input[ng-model="input.password"]');
+    return !!el && (el.matches(':autofill') || el.matches(':-webkit-autofill'));
+}"""
+CAPTCHA = """() => {
+    const visible = el => !!(el.getClientRects().length);
+    return Array.from(document.querySelectorAll('[class*="captcha"], [id*="captcha"], [class*="slider"], iframe[src*="captcha"]')).some(visible)
+      || /验证码|滑块|滑动验证/.test(document.body ? document.body.innerText : '');
+}"""
+
+
+def auto_login(page, autofill_timeout=15, login_timeout=30):
+    """One click attempt using browser autofill state only; never inspect inputs."""
+    try:
+        if '/#/account/login' not in page.url:
+            page.goto(URL + '/#/account/login', wait_until='domcontentloaded', timeout=60000)
+        deadline = time.monotonic() + autofill_timeout
+        while True:
+            if page.is_closed() or page.evaluate(CAPTCHA): return False
+            if page.evaluate(AUTOFILLED): break
+            if time.monotonic() >= deadline: return False
+            page.wait_for_timeout(250)
+        page.locator(PASSWORD).click(timeout=5000)
+        page.wait_for_timeout(500)
+        if page.evaluate(CAPTCHA): return False
+        page.locator('button[ng-click="login()"]').click(timeout=5000)
+        deadline = time.monotonic() + login_timeout
+        while True:
+            if session_alive(page): return True
+            if page.is_closed() or page.evaluate(CAPTCHA) or time.monotonic() >= deadline: return False
+            page.wait_for_timeout(500)
+    except Exception:
+        # Page navigation/autofill support errors fall back to manual login.
+        return False
+
+
+def wait_for_login(page, timeout=None):
     # 登录成功时 App 会跳转/重载页面,单次 wait_for_function 会因页面上下文销毁而报错;轮询并容忍跳转。
-    import time
+    deadline = None if timeout is None else time.monotonic() + timeout
     while True:
         require(not page.is_closed(), '友购窗口已关闭，还没登录成功；请重新运行刚才的命令。')
         if session_alive(page):
             return
-        time.sleep(2)
+        if deadline is not None and time.monotonic() >= deadline:
+            raise Problem(LOGIN_TIMEOUT)
+        time.sleep(2 if deadline is None else min(2, max(0, deadline - time.monotonic())))
 
 
 @contextmanager
-def session(ws, login=False, notify=None):
+def session(ws, login=False, notify=None, unattended=False, login_timeout=600):
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -121,8 +162,9 @@ def session(ws, login=False, notify=None):
             page.goto(URL, wait_until='domcontentloaded', timeout=60000)
             page.wait_for_function(READY, timeout=60000)
             if not session_alive(page):
-                if notify: notify('请在弹出的友购窗口里登录(手机号和密码自己输入);登录后程序会自动接着做,窗口别关。')
-                wait_for_login(page)
+                if not auto_login(page):
+                    if notify: notify('友购自动登录没成功；请在弹出的窗口里手动登录，可能需要验证码。' + ('最多等待 10 分钟。' if unattended else '登录后程序会自动接着做，窗口别关。'))
+                    wait_for_login(page, timeout=login_timeout if unattended else None)
                 page.wait_for_timeout(3000)  # 让 App 把登录资料写完
                 require(session_alive(page), '友购登录后查询仍被拒绝;请关掉窗口重新运行,登录后不要切换账号。')
         except Problem:
@@ -138,6 +180,6 @@ def session(ws, login=False, notify=None):
             if context is not None: context.close()
 
 
-def login(ws, notify=None):
-    with session(ws, login=True, notify=notify):
+def login(ws, notify=None, unattended=False):
+    with session(ws, login=True, notify=notify, unattended=unattended):
         return dict(message='已登录。注意:友购关掉窗口后登录会失效,fetch/yollgo-search 会自己弹窗,没登录时在窗口里再登一次即可。')

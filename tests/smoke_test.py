@@ -74,7 +74,9 @@ def check_output(ws, batch, template):
             src=source[ean];group=src['group'];item={**raw.get(group.removesuffix('B'),{}),**raw[group]}
             assert get('Group No')==group
             assert get('Categoría')==item['category']
-            for h,k in [('Nombre del producto','title'),('Descripción','description'),('Atributos adicionales','attributes'),('¿El producto cuenta con advertencia de seguridad?','warning')]:assert get(h)==item[k]
+            desc=get('Descripción');assert re.sub(r'<p><img [^>]*/></p>','',desc)==item['description'] and len(desc)<=3000
+            assert all(u in urls.values() for u in re.findall(r'<img src="([^"]+)"',desc))
+            for h,k in [('Nombre del producto','title'),('Atributos adicionales','attributes'),('¿El producto cuenta con advertencia de seguridad?','warning')]:assert get(h)==item[k]
             assert (get('Contenido de la advertencia de seguridad') or '')==item['warning_text']
             assert get('Marca')==shop['brand']
             expected=f"{shop['sku']['prefix']}{src['shop']}-{src['art_id']}-{ean}"+(f"-P{src['pack_qty']}" if int(src['pack_qty'])>1 else '')
@@ -95,8 +97,9 @@ def check_output(ws, batch, template):
             assert 'gpsr' not in get('Image per Variation').lower()
             for h in ('Código EAN','Precio original','Precio en España',stock,'Peso del paquete','Longitud del paquete','Fabricante'):
                 assert not sheet.cell(n,col(h)).protection.locked,(h,'被锁定')
-            if group=='T02':assert all(get(h) is None for h in ('Variation Name1','Option for Variation1','Variation Name2','Option for Variation2'))
-            else:assert get('Variation Name1')==src['var1_name'] and get('Option for Variation1')==src['var1_value']
+            for key, header in (('var1_name', 'Variation Name1'), ('var1_value', 'Option for Variation1'),
+                                ('var2_name', 'Variation Name2'), ('var2_value', 'Option for Variation2')):
+                assert get(header) == (src[key] or None), (group, header, get(header), src[key])
             group_cells[group].append(n)
         assert seen==set(source) and len(group_cells)==3
         for indexes in group_cells.values():assert indexes==list(range(min(indexes),max(indexes)+1))

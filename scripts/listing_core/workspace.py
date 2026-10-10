@@ -7,6 +7,8 @@ from pathlib import Path
 
 from .common import REPO, CSV_FIELDS, Problem, component, inside, read_json, require, write_csv, write_json
 
+AUTO_DEFAULTS = dict(enabled=True, budget_units_per_group=15, budget_units_per_batch=150, max_groups_per_file=10)
+
 
 def documents_folder():
     if os.name != 'nt':
@@ -79,6 +81,8 @@ def load_shop(ws):
     path = Path(ws) / 'shop.json'
     require(path.is_file(), f'{path} 不存在；请先运行 init，再填写店铺配置。')
     shop = read_json(path)
+    if isinstance(shop, dict) and 'auto' not in shop:
+        shop['auto'] = dict(AUTO_DEFAULTS)
     # The example describes required structure, never supplies fallback values.
     schema = read_json(REPO / 'config/shop.example.json')
     errors = []
@@ -120,6 +124,10 @@ def load_shop(ws):
     if errors:
         raise Problem([f'{e}；请参照 references/店铺配置.md 补齐。' for e in errors])
     p = shop['pricing']
+    for key in ('budget_units_per_group', 'budget_units_per_batch', 'max_groups_per_file'):
+        if shop['auto'][key] <= 0: errors.append(f'auto.{key} 必须大于 0')
+    if type(shop['auto']['max_groups_per_file']) is not int:
+        errors.append('auto.max_groups_per_file 必须是正整数')
     for key in ('cost_factor', 'spread_warn', 'original_markup', 'volumetric_divisor'):
         if p[key] <= 0: errors.append(f'pricing.{key} 必须大于 0')
     for key in ('packaging', 'min_profit', 'profit_rate'):

@@ -34,24 +34,27 @@ def parser():
         'price': '按 shop.json 对 candidates.csv 定价，生成 priced.csv',
         'fill': '检查后填入官方模板，生成 output/miravia_upload.xlsm',
         'check': '只检查不写文件，汇总文案、条码、下拉、图片和制造商问题',
+        'preflight': '付费前只读检查模板、供应商、图床、Key 是否设置及预算余额',
         'status': '查看批次文件是否齐全，以及价格和输出是否需要更新',
         'categories': '搜索模板类目下拉，返回完整类目原文',
         'gpsr': '读取店铺与商品资料，生成 GPSR 标签 PNG 和 A4 PDF',
         'overlay': '用 Pillow 在现有底图上叠字，不联网、不生成 AI 图片',
         'images-collect': '收集主推款展示图和每个变体的图片到 image_files.csv',
         'images-urls': '根据图床前缀生成 images.csv；只生成网址，不上传图片',
-        'yollgo-login': '打开系统 Edge，请在窗口里自行登录友购；不经手密码',
+        'yollgo-login': '打开系统 Edge，先尝试已保存密码的自动填充；失败请手动登录',
         'fetch': '读取 barcodes.txt，搜友购报价、选批发商、保存原图和总览',
         'yollgo-search': '在一家友购批发商中搜索关键词或条码，寻找同系列商品',
+        'keywords': '查亚马逊西班牙/Google 西班牙搜索联想(真实买家搜索词),写标题前用',
         'build': '校验 groups.json，生成候选 SKU、颜色/组合装条码和变体目录',
         'images-plan': '按批次、现有图片和审阅结果生成出图清单',
         'images-finish': '整理原始图、脚本画尺寸、派生变体图并备份旧图',
-        'seedream': '按清单调用 BytePlus Seedream；先估算，加 --yes 才付费',
+        'seedream': '按清单调用 Seedream；--yes 确认付费，--auto 按店铺预算放行',
         'images-sheet': '按组生成带 id 和状态的审阅拼图',
         'images-review': '记录图片通过或重做及原因',
         'image-host-setup': '建立或使用公开 GitHub 图床；先预览，加 --yes 才操作',
         'publish-images': '发布本批次审过的成品；先预览，加 --yes 才推送',
         'finalize': '收集图片、使用已发布网址、填表检查；可分批并更新上架台账',
+        'report': '写早上看这里.md：能否上传、表路径、售价利润、出图费用和待办',
     }
     commands = {}
     for name, description in descriptions.items():
@@ -65,7 +68,10 @@ def parser():
     commands['images-urls'].add_argument('--base-url', required=True, metavar='网址前缀', help='图床 images 根地址，HTTP(S)，不含查询参数')
     commands['yollgo-search'].add_argument('--shop', required=True, metavar='商家id', help='友购批发商 id，保留前导零，例如 027')
     commands['yollgo-search'].add_argument('keyword', metavar='关键词或条码', help='含空格时用引号括起来，如 "MANTA BORREGO"')
+    commands['keywords'].add_argument('seeds', nargs='+', metavar='种子词', help='品类+功能词,每个含空格的词用引号,如 "alcachofa ducha" "ducha filtro"')
     commands['build'].add_argument('--force', action='store_true', help='明确覆盖已有候选商品和变体映射，随后必须重新 price')
+    for name in ('fetch', 'yollgo-search', 'yollgo-login'):
+        commands[name].add_argument('--auto', action='store_true', help='无人值守：自动登录失败后最多等 10 分钟，再提示手动登录重跑')
     selection = commands['overlay'].add_mutually_exclusive_group(required=True)
     selection.add_argument('--all', action='store_true', help='处理全部商品组')
     selection.add_argument('--group', action='append', metavar='组名', help='指定组，可重复传入')
@@ -79,15 +85,20 @@ def parser():
     chosen = commands['seedream'].add_mutually_exclusive_group(required=True)
     chosen.add_argument('--only', nargs='+', help='选择完整 id')
     chosen.add_argument('--all-missing', action='store_true', help='只生成缺图，不包含重做；派生/共用图不扣费')
-    commands['seedream'].add_argument('--yes', action='store_true', help='确认预计张数及单位，允许调用付费接口')
+    approval = commands['seedream'].add_mutually_exclusive_group()
+    approval.add_argument('--yes', action='store_true', help='确认预计张数及单位，允许调用付费接口')
+    approval.add_argument('--auto', action='store_true', help='按 shop.json 的组/批次预算自动放行；超预算跳过，失败即停')
     commands['images-review'].add_argument('--ok', nargs='+', help='通过的完整 id，可多张')
     commands['images-review'].add_argument('--redo', nargs='+', help='需重做的完整 id')
     commands['images-review'].add_argument('--note', default='', help='重做原因，标记重做时必填')
+    commands['images-review'].add_argument('--checks', nargs='+', help='已检查项目，可多项，如 原尺寸 320px缩略图 文字')
+    commands['images-review'].add_argument('--evidence', help='可见证据：主卖点或动作、连接、结果在哪里')
+    commands['images-review'].add_argument('--severity', choices=('minor', 'major', 'critical'), help='轻微/硬伤/严重硬伤；后两项不能 --ok')
     commands['image-host-setup'].add_argument('--repo', required=True, metavar='账号/仓库名', help='填仓库名或账号/仓库名；已有公开仓库直接用，不覆盖旧内容')
     commands['image-host-setup'].add_argument('--branch', default='main', help='图床分支，默认 main；已有其他分支时可指定')
     commands['image-host-setup'].add_argument('--yes', action='store_true', help='确认公开操作；不加仅说明计划并退出 2')
     commands['publish-images'].add_argument('--yes', action='store_true', help='确认推送；不加仅列张数、总大小、目标和跳过图片，退出 2')
-    commands['publish-images'].add_argument('--include-unreviewed', action='store_true', help='明确允许发布没审过、图片变化或要求重做的现有成品；仍须 --yes')
+    commands['publish-images'].add_argument('--include-unreviewed', action='store_true', help='允许未审或图片变化的成品；失败组仍禁止发布，仍须 --yes')
     commands['finalize'].add_argument('--max-groups', type=int, metavar='N', help='每份最多 N 个链接；主组和 B 组不拆开，它们各占一个链接')
     commands['finalize'].add_argument('--base-url', metavar='网址前缀', help='可选：为手动托管图片生成网址；GitHub 发布后无需填写，不联网不推送')
     return p
@@ -111,12 +122,16 @@ def dispatch(args):
     if cmd == 'yollgo-login':
         from listing_core.yollgo_browser import login
         # main captures stdout; send interactive instructions before its redirect.
-        return login(ws, notify=_tell)
+        return login(ws, notify=_tell, unattended=args.auto)
     if cmd == 'yollgo-search':
         from listing_core.yollgo_browser import session
         from listing_core.yollgo import search
-        with session(ws, notify=_tell) as client:
-            return search(client, args.shop, args.keyword)
+        root = batch_path(ws, args.batch) if getattr(args, 'batch', None) else ws
+        with session(ws, notify=_tell, unattended=args.auto) as client:
+            return search(client, args.shop, args.keyword, root=root)
+    if cmd == 'keywords':
+        from listing_core.keywords import suggest
+        return suggest(args.seeds)
     if cmd == 'categories':
         import openpyxl
         from listing_core.headers import dropdown
@@ -125,6 +140,12 @@ def dispatch(args):
         finally: wb.close()
         return dict(categories=values, count=len(values))
     batch = batch_path(ws, getattr(args, 'batch', None))
+    if cmd == 'preflight':
+        from listing_core.preflight import run
+        return run(ws, batch, shop)
+    if cmd == 'report':
+        from listing_core.report import run
+        return run(ws, batch, shop, template_path(ws, shop, False))
     if cmd == 'publish-images':
         from listing_core.image_host import publish
         return publish(ws, batch, shop, args.yes, args.include_unreviewed)
@@ -134,7 +155,7 @@ def dispatch(args):
     if cmd == 'fetch':
         from listing_core.yollgo_browser import session
         from listing_core.yollgo import fetch
-        with session(ws, notify=_tell) as client:
+        with session(ws, notify=_tell, unattended=args.auto) as client:
             return fetch(ws, batch, shop, client)
     if cmd == 'build':
         from listing_core.yollgo_build import build
@@ -144,10 +165,10 @@ def dispatch(args):
         if cmd == 'images-plan': return iw.plan(batch, args.mode)
         if cmd == 'images-finish': return iw.finish(batch, args.group, args.only)
         if cmd == 'images-sheet': return iw.sheet(batch, args.name, args.group, args.only, args.pending)
-        return iw.review(batch, args.ok, args.redo, args.note)
+        return iw.review(batch, args.ok, args.redo, args.note, args.checks, args.evidence, args.severity)
     if cmd == 'seedream':
         from listing_core.seedream import run
-        return run(batch, args.only, args.all_missing, args.yes)
+        return run(batch, args.only, args.all_missing, args.yes, auto=args.auto, shop=shop)
     # No batch file may write through a pre-existing link outside its workspace.
     if cmd not in ('check', 'status'):
         for name in ('priced.csv', 'image_files.csv', 'images.csv', 'output'):
@@ -221,7 +242,7 @@ def main(argv=None):
         errors = [f'这一步未完成（{type(exc).__name__}）：{exc}；请核对对应批次文件和配置后重试。']
     exit_code = output.pop('exit_code', 1 if errors else 0)
     result = dict(ok=not errors, warnings=warnings, errors=errors, **output)
-    if args is not None and args.command == 'finalize':
+    if args is not None and args.command in ('finalize', 'report'):
         result.setdefault('upload_ready', False)
     if json_mode:
         print(json.dumps(result, ensure_ascii=False, allow_nan=False))
@@ -240,6 +261,10 @@ def main(argv=None):
             for category in output.get('categories', []): print(category)
             for product in output.get('products', []):
                 print(f"{product['barcode']}  {product['name']}  €{product['price']}")
+                print(f"货号：{product['usercode']}；西语原名：{product['namees']}")
+                if product.get('image_path'): print('原图：' + product['image_path'])
+                elif product.get('image_url'): print('原图网址：' + product['image_url'])
+            if output.get('sheet'): print('候选总览：' + output['sheet'])
             if 'steps' in output:
                 labels = dict(barcodes='条码清单', candidates='候选商品', pricing='定价', content='文案', image_files='本地图片清单', images='图片网址', output='上传表', image_directory='图片目录')
                 for stage, state in output['steps'].items():
@@ -248,7 +273,8 @@ def main(argv=None):
                     print(f'{labels[stage]}：{status}')
                     if 'error' in state: print(state['error'])
         for item in output.get('files', []): print(f"拟发布：{item['id']} → {item['path']}")
-        for item in output.get('skipped', []): print(f"跳过：{item['id']}（{item['reason']}）")
+        for item in output.get('skipped', []):
+            print(f"跳过：{item['id']}（{item['reason']}）" if isinstance(item, dict) else f'跳过：{item}')
         for warning in warnings: print(f'提醒：{warning}')
         for error in errors: print(f'错误：{error}')
     return exit_code

@@ -19,7 +19,7 @@ from functools import lru_cache
 from PIL import Image, ImageDraw, ImageFont
 
 from .content import seller_sku, resolve_content
-from .common import read_csv, read_json, Problem, inside
+from .common import read_csv, read_json, Problem, inside, source_names
 
 SIZE = (945, 591)
 DPI = 300
@@ -55,9 +55,8 @@ MEASURE = re.compile(rf'(?<![\w.,])({NUMBER}(?:\s*[xX×]\s*{NUMBER}){{0,2}})\s*(
 
 def medidas(row, item=None):
     """Explicit source dimensions only. Never read package estimates."""
-    src = row['src_name']
     # Source can contain a third dimension omitted from the variant value.
-    sources = [src, row['var1_value'], row['var2_value']]
+    sources = source_names(row) + [row['var1_value'], row['var2_value']]
     for source in sources:
         match = MEASURE.search(source)
         if match:
@@ -292,6 +291,8 @@ def run(batch, shop):
                   omitted_material=[r['SKU'] for r in records if not r['material']], warning_audit=audit)
     (out / 'generation_report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')
     return dict(count=len(records), output=str(out), pdf_pages=pages,
-                warnings=[f"{r['SKU']} 缺少已核实的商品尺寸或材质，标签已省略该项。"
+                warnings=[f"{r['SKU']} 缺少已核实的商品" + '、'.join(
+                          label for field, label in (('medidas', '尺寸'), ('material', '材质')) if not r[field])
+                          + '，标签已省略上述字段。'
                           for r in records if not r['medidas'] or not r['material']],
                 message='GPSR 标签已生成；请按实际尺寸 100% 打印 A4 PDF。')

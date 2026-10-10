@@ -13,7 +13,7 @@ import openpyxl
 from PIL import Image
 
 from helpers import FIXTURES, ROOT, cli, csv_rows, json_write, workspace
-from listing_core.common import CANDIDATE_FIELDS, Problem, write_csv
+from listing_core.common import CANDIDATE_FIELDS, SOURCE_NAME_FIELDS, Problem, write_csv
 from listing_core.workspace import load_shop
 from listing_core.yollgo import fetch, read_barcodes, search
 from listing_core.yollgo_browser import BrowserClient
@@ -157,7 +157,7 @@ def test_build():
     result = cli(ws, 'build', '--batch', 'sample')
     assert result['count'] == 6 and result['groups'] == 2
     rows, maps = csv_rows(batch / 'candidates.csv'), csv_rows(batch / 'variantes.csv')
-    assert list(rows[0]) == CANDIDATE_FIELDS
+    assert list(rows[0]) == CANDIDATE_FIELDS + SOURCE_NAME_FIELDS
     assert rows[0]['ean'] == barcode and rows[1]['ean'] == code(barcode[:11] + '2')
     assert rows[1]['unit_ean'] == barcode and maps[1]['variante'] == '130x160-marron'
     assert all(float(row['unit_cost_ex_iva']) == 10 for row in rows[:2])
@@ -292,18 +292,21 @@ def test_cli_and_browser():
     fake = FakeClient({('3321', barcode): [product(barcode)]})
     (batch / 'barcodes.txt').write_text(barcode, encoding='utf-8')
     import mlist
+    unattended_flags = []
     @contextmanager
     def fake_session(*args, **kwargs):
+        unattended_flags.append(kwargs.get('unattended'))
         yield fake
     with patch('listing_core.yollgo_browser.session', fake_session):
         stream = io.StringIO()
         with redirect_stdout(stream):
-            assert mlist.main(['fetch', '--ws', str(ws), '--batch', 'sample', '--json']) == 0
+            assert mlist.main(['fetch', '--ws', str(ws), '--batch', 'sample', '--auto', '--json']) == 0
         assert json.loads(stream.getvalue())['found'] == 1
         stream = io.StringIO()
         with redirect_stdout(stream):
-            assert mlist.main(['yollgo-search', '--ws', str(ws), '--shop', '3321', barcode]) == 0
+            assert mlist.main(['yollgo-search', '--ws', str(ws), '--shop', '3321', barcode, '--auto']) == 0
         assert barcode in stream.getvalue() and '€6.5' in stream.getvalue()
+        assert unattended_flags == [True, True]
     class FakePage:
         def __init__(self): self.calls = []
         def evaluate(self, script, params):
@@ -373,7 +376,66 @@ def main():
     test_build()
     test_first_build_interruption()
     test_cli_and_browser()
+    test_auto_login()
     print('YOLLGO OK')
+
+
+def test_auto_login():
+    from listing_core import yollgo_browser as browser
+    ws = workspace('auto-login-')
+    clock, clicks, messages, closed = [0.0], [], [], []
+    class Page:
+        url = browser.URL
+        filled, alive, captcha, succeed = True, False, False, True
+        def goto(self, url, **kwargs): self.url = url
+        def wait_for_function(self, *a, **k): pass
+        def wait_for_timeout(self, ms): clock[0] += ms / 1000
+        def is_closed(self): return False
+        def evaluate(self, script):
+            if script == browser.AUTOFILLED:
+                assert '.value' not in script and 'matches' in script
+                return self.filled
+            if script == browser.CAPTCHA: return self.captcha
+            if script == browser.ALIVE: return self.alive
+            return 'public-user-id' if self.alive else -1
+        def locator(self, selector):
+            def click(**kwargs):
+                clicks.append(selector)
+                if selector == 'button[ng-click="login()"]' and self.succeed: self.alive = True
+            return SimpleNamespace(click=click)
+    page = Page()
+    class Context:
+        pages = [page]
+        def close(self): closed.append(True)
+    class Playwright:
+        def __enter__(self):
+            return SimpleNamespace(chromium=SimpleNamespace(launch_persistent_context=lambda *a, **k: Context()))
+        def __exit__(self, *a): pass
+    def sleep(seconds): clock[0] += seconds
+    with patch.dict(sys.modules, {'playwright.sync_api': SimpleNamespace(sync_playwright=Playwright)}), \
+         patch.object(browser.time, 'monotonic', side_effect=lambda: clock[0]), patch.object(browser.time, 'sleep', side_effect=sleep):
+        with browser.session(ws, unattended=True, notify=messages.append): pass
+        assert clicks == [browser.PASSWORD, 'button[ng-click="login()"]'] and not messages and closed
+        # No autofill: return to the manual prompt; user login allows continuation.
+        page.alive = page.filled = False; clicks.clear(); messages.clear()
+        def manual(message):
+            messages.append(message); page.alive = True
+        with browser.session(ws, notify=manual): pass
+        assert not clicks and messages
+        # The unattended wait times out with the actionable morning instruction.
+        page.alive = False; messages.clear()
+        before = len(closed)
+        def unattended():
+            with browser.session(ws, unattended=True, login_timeout=0.01, notify=messages.append):
+                raise AssertionError('未登录不能进入业务')
+        fails(unattended, '友购自动登录没成功', 'mlist yollgo-login', '重跑 fetch')
+        assert len(closed) == before + 1 and not clicks
+        page.filled = True; page.captcha = True
+        assert not browser.auto_login(page, autofill_timeout=0.01, login_timeout=0.01) and not clicks
+        page.captcha = False; page.succeed = False
+        assert not browser.auto_login(page, autofill_timeout=0.01, login_timeout=0.01)
+        assert clicks == [browser.PASSWORD, 'button[ng-click="login()"]']
+    print('自动登录：只查 autofill、点击顺序、成功继续、人工回退、无人值守超时、验证码不点击和登录失败通过')
 
 
 if __name__ == '__main__':

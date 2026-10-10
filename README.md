@@ -3,6 +3,8 @@
 把友购(Yollgo)批发商品做成米拉维亚(Miravia 西班牙站)批量上架表的 skill,Claude Code 和 Codex 都能用。
 用法见 `SKILL.md`;装好后对 AI 说"米拉维亚上新"或"上架这些条码"即可。
 
+**第一次用？先看 [使用说明.md](使用说明.md)**(从下载到每天怎么用,不用懂代码)。
+
 ## 安装(给 AI 照做,Windows)
 
 1. 需要:Git、Python 3.12、GitHub CLI(`gh`,推图床用)、Edge(系统自带)。缺的用 `winget install` 装。

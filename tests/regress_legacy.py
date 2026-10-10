@@ -3,10 +3,18 @@ import json
 import sys
 from pathlib import Path
 from decimal import Decimal, InvalidOperation
+import re
 import openpyxl
 from helpers import ROOT, cli, csv_rows, workspace
 
 LEGACY = Path(r'E:\我的文件\桌面\Miravia')
+
+
+IMG = re.compile(r'<p><img [^>]*/></p>')  # 描述里自动插的图床图,旧基准没有
+
+
+def strip_img(v):
+    return IMG.sub('', v) if isinstance(v, str) else v
 
 
 def equal_cell(a, b):
@@ -25,6 +33,16 @@ def main():
     cli(ws,'import-legacy','--from',LEGACY,'--batch','legacy')
     result=cli(ws,'price','--batch','legacy')
     print(f"price：{result['count']} 行；{len(result['warnings'])} 条提醒")
+    # Only enrich the temporary imported copy with synthetic image-test facts.
+    # They never enter workbook cells or alter the read-only legacy baseline.
+    from helpers import FIXTURES, json_write
+    content_path = ws / 'batches/legacy/content.json'
+    content = json.loads(content_path.read_text('utf-8-sig'))
+    fixture = json.loads((FIXTURES / 'batch/content.json').read_text('utf-8-sig'))['T01']
+    for item in content.values():
+        for key in ('use_scene', 'hero_feature', 'scene_briefs'):
+            item[key] = fixture[key]
+    json_write(content_path, content)
     result=cli(ws,'fill','--batch','legacy')
     print(f"fill：{result['count']} SKU / {result['groups']} 组；{len(result['warnings'])} 条提醒")
     batch=ws/'batches/legacy'
@@ -42,7 +60,7 @@ def main():
         if (a.max_row,a.max_column)!=(b.max_row,b.max_column):diffs.append('Pantilla 行列数不同')
         for r in range(1,max(a.max_row,b.max_row)+1):
             for c in range(1,max(a.max_column,b.max_column)+1):
-                if a.cell(r,c).value!=b.cell(r,c).value:
+                if a.cell(r,c).value!=strip_img(b.cell(r,c).value):
                     diffs.append(f'Pantilla {a.cell(r,c).coordinate}：旧={a.cell(r,c).value!r} 新={b.cell(r,c).value!r}')
     finally:
         wb1.close();wb2.close()

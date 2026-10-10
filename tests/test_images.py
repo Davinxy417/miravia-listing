@@ -32,7 +32,63 @@ def captured(ws, *args):
     return code, json.loads(out.getvalue())
 
 
+def test_auto_budget():
+    ws = workspace('auto-budget-')
+    cli(ws, 'init'); cli(ws, 'new-batch', 'sample')
+    batch = ws / 'batches/sample'
+    (batch / 'ref.jpg').write_bytes(fake_image())
+    def job(jid, refs=1):
+        return dict(id=jid, group=jid.split('/')[0], variant='crema', slot=jid.split('/')[-1],
+                    method='model', status='missing', raw=None, refs=['ref.jpg'] * refs,
+                    raw_dir='images/' + jid.rsplit('/', 1)[0] + '/internal/raw', output='unused.jpg',
+                    prompt='离线图', blockers=[])
+    jobs = [job('G01/crema/01', 3), job('G01/crema/02'), job('G01B/crema/01'), job('G03/crema/01')]
+    json_write(batch / 'image_plan.json', dict(jobs=jobs))
+    json_write(batch / 'seedream_log.json', {'G01/old/01': [dict(state='failed')],
+                                           'G00/old/01': [dict(state='started', units=0.5)]})
+    shop = dict(auto=dict(enabled=True, budget_units_per_group=2.8, budget_units_per_batch=4.58))
+    config = read_json(ws / 'shop.json')
+    config['auto'] = dict(shop['auto'], max_groups_per_file=10)
+    json_write(ws / 'shop.json', config)
+    with patch.object(seedream, 'make_plan', return_value=dict(jobs=jobs)), patch.object(seedream, 'preflight', return_value=dict(account_blockers=[], group_blockers={})):
+        result = seedream.run(batch, all_missing=True, auto=True, shop=shop, client=lambda *a: fake_image(), key_reader=lambda: 'fake')
+        assert result['produced'] == ['G01/crema/02', 'G01B/crema/01'], result
+        assert result['over_budget'] == ['G01/crema/01', 'G03/crema/01'] and result['spent_units'] == 4.58
+        log = read_json(batch / 'seedream_log.json')
+        assert log['G01/crema/02'][0]['units'] == 1.36
+        assert seedream.spending(log)[1]['G01'] == seedream.Decimal('2.72')
+        result = seedream.run(batch, all_missing=True, auto=True, shop=shop,
+                              key_reader=lambda: (_ for _ in ()).throw(AssertionError('超预算不读 Key')))
+        assert len(result['over_budget']) == 4 and not result['errors'] and result['spent_units'] == 4.58
+        with patch.object(seedream, 'api_key', side_effect=AssertionError('不能读密钥')):
+            code, result = captured(ws, 'seedream', '--only', jobs[0]['id'], '--auto')
+        assert code == 0 and result['over_budget'] == [jobs[0]['id']]
+    code, result = captured(ws, 'seedream', '--only', jobs[0]['id'], '--auto', '--yes')
+    assert code == 1 and '--auto' in str(result) and '--yes' in str(result)
+    config = read_json(ws / 'shop.json'); config['auto']['enabled'] = False
+    json_write(ws / 'shop.json', config)
+    code, result = captured(ws, 'seedream', '--only', jobs[0]['id'], '--auto')
+    assert code == 1 and '店铺未开启全自动' in str(result)
+    # An uncertain API failure is charged once and stops all later calls.
+    (batch / 'seedream_log.json').unlink()
+    jobs = [job('G01/crema/01', 2), job('G02/crema/01')]
+    json_write(batch / 'image_plan.json', dict(jobs=jobs))
+    with patch.object(seedream, 'make_plan', return_value=dict(jobs=jobs)), patch.object(seedream, 'preflight', return_value=dict(account_blockers=[], group_blockers={})):
+        calls = []
+        def failure(*args):
+            calls.append(1); raise TimeoutError('offline')
+        tight = dict(auto=dict(enabled=True, budget_units_per_group=10, budget_units_per_batch=1.5))
+        result = seedream.run(batch, all_missing=True, auto=True, shop=tight, client=failure, key_reader=lambda: 'fake')
+        assert len(calls) == 1 and result['errors'] and result['spent_units'] == 1.45
+        assert result['over_budget'] == [], '失败立即停，不处理或记录后面的预算跳过'
+        assert read_json(batch / 'seedream_log.json')['G01/crema/01'][0]['state'] == 'failed'
+    print('全自动预算：旧日志/失败/started 累计、边界放行、超预算继续、B 组独立、重跑累计、互斥和关闭开关通过')
+
+
 def main():
+    test_auto_budget()
+    from test_a6 import main as test_a6
+    test_a6()
     ws = workspace('images-')
     cli(ws, 'init'); cli(ws, 'new-batch', 'sample')
     batch = ws / 'batches/sample'
@@ -72,7 +128,7 @@ def main():
         code, result=captured(ws,'seedream','--only',copied)
         assert code==2 and result['count']==0 and result['estimated_units']==0
     assert not (batch / 'seedream_log.json').exists()
-    with patch.object(seedream, 'api_key', side_effect=Problem('ARK_API_KEY 没设置；请在 Windows 用户环境变量中新增。')):
+    with patch.object(seedream, 'preflight', return_value=dict(account_blockers=[], group_blockers={})), patch.object(seedream, 'api_key', side_effect=Problem('ARK_API_KEY 没设置；请在 Windows 用户环境变量中新增。')):
         code, result = captured(ws, 'seedream', '--only', jid, '--yes')
         assert code==1 and 'ARK_API_KEY' in result['errors'][0] and '环境变量' in result['errors'][0]
     with patch.dict(os.environ, {'ARK_API_KEY': ''}), patch('sys.platform', 'linux'):
@@ -81,7 +137,7 @@ def main():
     calls = []
     def fake(prompt, refs, key):
         calls.append((prompt, refs)); return fake_image()
-    with patch.object(seedream, 'api_key', return_value='仅用于测试'), patch.object(seedream, 'generate', side_effect=fake):
+    with patch.object(seedream, 'preflight', return_value=dict(account_blockers=[], group_blockers={})), patch.object(seedream, 'api_key', return_value='仅用于测试'), patch.object(seedream, 'generate', side_effect=fake):
         code, result = captured(ws, 'seedream', '--only', jid, '--yes')
         assert code==0 and result['produced']==[jid] and len(calls)==1
     assert '仅用于测试' not in (batch / 'seedream_log.json').read_text('utf-8')
@@ -147,10 +203,10 @@ def main():
     cli(ws,'images-review','--batch','sample','--redo',jid,'--note','测试重做')
     cli(ws,'images-plan','--batch','sample')
     secret = 'fake-sensitive-value'
-    with patch.object(seedream,'api_key',return_value=secret), patch.object(seedream,'generate',side_effect=RuntimeError(secret)):
+    with patch.object(seedream, 'preflight', return_value=dict(account_blockers=[], group_blockers={})), patch.object(seedream,'api_key',return_value=secret), patch.object(seedream,'generate',side_effect=RuntimeError(secret)):
         code, result = captured(ws,'seedream','--only',jid,'--yes')
         assert code==1 and secret not in json.dumps(result)
-    with patch.object(seedream,'api_key',side_effect=AssertionError('预算耗尽不读 Key')):
+    with patch.object(seedream, 'preflight', return_value=dict(account_blockers=[], group_blockers={})), patch.object(seedream,'api_key',side_effect=AssertionError('预算耗尽不读 Key')):
         code, result = captured(ws,'seedream','--only',jid,'--yes')
         assert code==1 and '两次' in str(result)
     # Imported junction allows plans/sheets/reviews in root, denies all image writers.

@@ -80,5 +80,6 @@
       "responsable": "ZHENGDA COMERCIO, 518, 2026-10-07"
     }
   },
-  "image_host": null
+  "image_host": null,
+  "auto": {"enabled": true, "budget_units_per_group": 15, "budget_units_per_batch": 150, "max_groups_per_file": 10}
 }
